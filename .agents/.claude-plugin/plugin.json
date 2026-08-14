@@ -1,0 +1,34 @@
+{
+  "name": "pr0xteus",
+  "description": "WireGuard-backed SOCKS5 tunnel pools for trusted services that need a configured country exit without exposing an open proxy.",
+  "author": {
+    "name": "psyb0t",
+    "url": "https://github.com/psyb0t"
+  },
+  "homepage": "https://github.com/psyb0t/pr0xteus",
+  "license": "MIT",
+  "keywords": [
+    "wireguard",
+    "socks5",
+    "proxy",
+    "vpn",
+    "docker",
+    "egress",
+    "self-hosted"
+  ],
+  "userConfig": {
+    "pr0xteus_url": {
+      "type": "string",
+      "title": "pr0xteus URL",
+      "description": "Base URL of a trusted private pr0xteus control API, for example http://127.0.0.1:8000 or http://pr0xteus:8000.",
+      "required": true
+    },
+    "pr0xteus_api_token": {
+      "type": "string",
+      "title": "pr0xteus API token",
+      "description": "Bearer token for that private control API.",
+      "required": true,
+      "sensitive": true
+    }
+  }
+}

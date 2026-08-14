@@ -1,0 +1,151 @@
+name: pr0xteus
+
+services:
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:mode=755,noexec,nosuid,size=8m
+      - /tmp:mode=1777,noexec,nosuid,size=8m
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
+          pids: 64
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      IMAGES: 0
+      NETWORKS: 0
+      SERVICES: 0
+      TASKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      INFO: 0
+      VERSION: 0
+      LOG_LEVEL: warning
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    expose:
+      - "2375"
+    networks:
+      - control
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping | grep -qx 'OK'"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  pr0xteus:
+    build:
+      context: .
+    image: psyb0t/pr0xteus:dev
+    env_file:
+      - .env
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,noexec,nosuid,size=32m
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+          pids: 128
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    environment:
+      PR0XTEUS_CELL_NETWORK: pr0xteus-egress
+
+      # Scope orphan reconciliation to this Compose controller; never let one
+      # independent controller reap another one's cells on the same daemon.
+      PR0XTEUS_MANAGED_SCOPE: pr0xteus-compose
+      PR0XTEUS_DOCKER_HOST: tcp://docker-socket-proxy:2375
+      TUNNEL_POOL_LISTEN_ADDR: 0.0.0.0:8000
+      TUNNEL_POOL_METRICS_ADDR: 0.0.0.0:9091
+      TUNNEL_POOL_BUNDLE_DIR: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
+      TUNNEL_POOL_POOLS_FILE: /run/pr0xteus/pools.yaml
+      TUNNEL_POOL_ROUTING_FILE: /run/pr0xteus/routing.yaml
+      PR0XTEUS_API_TOKEN_FILE: /run/secrets/pr0xteus_api_token
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_ADD_SOURCE: ${LOG_ADD_SOURCE:-true}
+    ports:
+      - "127.0.0.1:${PR0XTEUS_HTTP_PORT:-8000}:8000"
+      - "127.0.0.1:${PR0XTEUS_METRICS_PORT:-9091}:9091"
+    volumes:
+      - type: bind
+        source: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
+        target: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
+        read_only: true
+      - type: bind
+        source: ${PR0XTEUS_POOLS_FILE:?set the pool file path in .env}
+        target: /run/pr0xteus/pools.yaml
+        read_only: true
+      - type: bind
+        source: ${PR0XTEUS_ROUTING_FILE:?set the routing file path in .env}
+        target: /run/pr0xteus/routing.yaml
+        read_only: true
+    secrets:
+      - source: pr0xteus_api_token
+        target: pr0xteus_api_token
+        uid: "1500"
+        gid: "1500"
+        mode: 0400
+    networks:
+      - control
+      # The controller joins this network only to probe each cell's private
+      # SOCKS5 listener. Its host-published control API stays loopback-bound.
+      - egress
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/healthz | grep -qx 'ok'"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  control:
+    internal: true
+    name: pr0xteus-control
+  # Cells must reach their WireGuard endpoints, so this network cannot be
+  # internal. The controller joins only to check each cell's private SOCKS5
+  # listener; the cell kill-switch allows only WireGuard endpoint traffic
+  # before the tunnel comes up.
+  egress:
+    name: pr0xteus-egress
+
+secrets:
+  pr0xteus_api_token:
+    file: ${PR0XTEUS_API_TOKEN_FILE:?set the API token file path in .env}

@@ -1,0 +1,120 @@
+---
+name: pr0xteus
+description: Give a trusted self-hosted workload a configured WireGuard-backed SOCKS5 exit through pr0xteus's bearer-protected private HTTP API. Request an operator-approved ISO country or logical pool, inspect configured pools and hot-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and private egress-network hostnames. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
+homepage: https://github.com/psyb0t/pr0xteus
+user-invocable: true
+metadata:
+  openclaw:
+    emoji: "🧬"
+    primaryEnv: PR0XTEUS_URL
+    requires:
+      bins: [bash, curl, docker, jq]
+permissions:
+  network: "Outbound HTTP only to the user-configured PR0XTEUS_URL. Traffic sent through an allocated SOCKS5 URL exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs."
+  shell: "bash, curl, jq, and explicit Docker commands from references/setup.md for user-requested setup or verification."
+  filesystem: "Normal use reads PR0XTEUS_URL and PR0XTEUS_API_TOKEN from the environment. Operator setup writes only gitignored local WireGuard, pool, routing, token, and .env files."
+---
+
+# pr0xteus
+
+pr0xteus is the not-an-open-proxy bit between a trusted service and a
+WireGuard-backed SOCKS5 exit. The operator owns the local pool policy. Callers
+can ask for an approved country or pool; they cannot smuggle Docker flags,
+host paths, images, or arbitrary provider configs into the daemon.
+
+For the actual setup — local config, a complete pool example, and proof that a
+private SOCKS5 cell works — read [references/setup.md](references/setup.md)
+before touching the stack.
+
+## Security and safety
+
+- This skill is for an instance the user already runs and trusts. Do not hunt
+  through the workspace for tokens, provider bundles, or Docker config. Take
+  `PR0XTEUS_URL` and `PR0XTEUS_API_TOKEN` from the environment or ask.
+- Allocating a proxy starts or reuses a configured WireGuard cell. It can spend
+  provider capacity and sends later traffic through the operator's exit, so
+  only request the country, pool, and task the user actually named.
+- A returned `socks5://` URL is private Docker-network plumbing. Do not expose
+  it or paste it into a random public service. Use it from the intended
+  workload joined to `pr0xteus-egress`.
+- pr0xteus has no MCP endpoint. This is a documentation skill, not a fake
+  bridge plugin with invented tools.
+
+## Use it for
+
+- Giving a trusted workload a configured country-specific SOCKS5 exit.
+- Checking whether the controller is alive or inspecting configured pools and
+  their hot-tunnel state.
+- Replacing a broken SOCKS5 assignment while avoiding the same old cell.
+- Wiring a Go service through `pkg/client`, with VPN-only traffic by default or
+  explicit public-first fallback where that makes sense.
+
+## Do not use it for
+
+- A public or anonymous proxy service.
+- Provider-account provisioning, config scraping, or random WireGuard surgery
+  outside the operator-owned pool policy.
+- A workload outside the private Docker network that cannot resolve the
+  returned cell hostname.
+
+## Talk to a running controller
+
+Set the private control URL and bearer token supplied by the operator:
+
+```bash
+export PR0XTEUS_URL=http://127.0.0.1:8000
+export PR0XTEUS_API_TOKEN=replace-with-the-token-from-your-secret-store
+
+auth_header=(--header @<(printf 'Authorization: Bearer %s' "$PR0XTEUS_API_TOKEN"))
+```
+
+Health lives on the separate metrics listener and deliberately has no token:
+
+```bash
+curl --fail --silent http://127.0.0.1:9091/healthz
+```
+
+Ask for the configured US route:
+
+```bash
+curl --fail-with-body \
+  "${auth_header[@]}" \
+  --header 'Content-Type: application/json' \
+  --data '{"country":"US"}' \
+  "$PR0XTEUS_URL/v1/proxies"
+```
+
+The response contains `url`, `pool`, and `exitCountry`. The `url` works only
+from the private egress network. The setup reference has a one-shot container
+that proves it actually uses SOCKS5.
+
+Inspect the operator view:
+
+```bash
+curl --fail-with-body "${auth_header[@]}" "$PR0XTEUS_URL/v1/pools" | jq .
+```
+
+## Replace a bad assignment
+
+There is no lease-release endpoint. pr0xteus records the assignment, finishes
+the API request, then keeps a healthy cell warm until its idle policy reaps it.
+If the workload cannot use an allocated proxy, request another one and exclude
+the old URL:
+
+```bash
+curl --fail-with-body \
+  "${auth_header[@]}" \
+  --header 'Content-Type: application/json' \
+  --data '{"country":"US","excludeProxy":"socks5://previous-private-cell:1080"}' \
+  "$PR0XTEUS_URL/v1/proxies"
+```
+
+## Go client
+
+The public [`pkg/client`](../../../pkg/client) package requests a proxy,
+builds an HTTP client around it, and can preflight that the exit IP changes.
+Keep the control token in the service's secret store and pass it with
+`client.WithBearerToken`; the package doc comment contains the full shape.
+
+Read [references/setup.md](references/setup.md) before changing local pool
+policy or operating the persistent stack.

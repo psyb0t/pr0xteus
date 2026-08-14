@@ -1,0 +1,5 @@
+# Copy this into ignored config/egress-routing.yaml and point each requested
+# ISO 3166-1 alpha-2 country code at a pool from secrets/pools.yaml.
+country_to_pool:
+  US: primary
+default_pool: primary

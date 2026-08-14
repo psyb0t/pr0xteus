@@ -1,0 +1,20 @@
+# Findings gitleaks has judged and this repo has judged back.
+#
+# Fingerprints, deliberately — not a path or rule allowlist. A fingerprint is
+# file + rule + LINE, so these entries silence exactly these findings and
+# nothing else. A new secret on line 25 of the same file, or a different rule
+# firing on the same line, still fails the release. And if one of these lines
+# moves, its fingerprint stops matching and the finding comes back for
+# re-review rather than staying silently suppressed.
+#
+# The `/repo/` prefix is not decoration: gitleaks builds the fingerprint from
+# the path it was given, and the release script scans a staged copy bind-mounted
+# at /repo. Without it these lines match nothing and the gate fails while
+# looking configured.
+#
+# Both entries are test request-id fixtures ("panic-req-456", "panic-test-789")
+# passed as a context value. The generic-api-key rule scores them on entropy and
+# the surrounding `Key: "value"` shape — right about the pattern, wrong about
+# these two strings.
+/repo/serbewr/middleware/recovery_test.go:generic-api-key:24
+/repo/serbewr/middleware/recovery_test.go:generic-api-key:99

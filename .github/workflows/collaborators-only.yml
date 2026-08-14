@@ -1,0 +1,14 @@
+name: collaborators-only
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  gate:
+    uses: psyb0t/reusable-github-workflows/.github/workflows/collaborators-only-workflow.yml@master
+    with:
+      close_message: "No drive-by PRs for this one. Open an issue with the problem and repro instead."
+      lock: true

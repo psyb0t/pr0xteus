@@ -1,0 +1,22 @@
+# Development image for all Makefile-driven Go and shell checks.
+FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df
+
+RUN apk add --no-cache \
+		bash=5.3.9-r1 \
+		build-base=0.5-r4 \
+		ca-certificates=20260611-r0 \
+		docker-cli=29.5.3-r0 \
+		docker-cli-compose=5.1.4-r0 \
+		git=2.54.0-r0 \
+		jq=1.8.1-r0 \
+		make=4.4.1-r4 \
+		ripgrep=15.1.0-r0 \
+		shellcheck=0.11.0-r1 \
+		shfmt=3.13.1-r1
+
+WORKDIR /work
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+CMD ["bash"]

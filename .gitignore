@@ -1,0 +1,52 @@
+# Codex / agent scratch — never commit
+AGENTS.md
+CODEX.local.md
+.research_files/
+.agent_notes/
+.agent_knowledge/
+.secaudit/
+.testing/
+.integration-work/
+.anustimes/
+.refactor/
+.brutal_reviews/
+.rule_audits/
+.telemetry/
+PLAN.md
+implplan.md
+NOTES.md
+TODO.md
+WIP.md
+CLAUDE.md
+git-update.sh
+
+# Secrets and real WireGuard material
+.env
+.env.local
+.env.*
+!.env.example
+secrets/
+config/
+
+# Test / profile artifacts
+coverage.txt
+coverage.out
+coverage-percent.txt
+profile.out
+.cover/
+htmlcov/
+
+# Build outputs
+bin/
+build/
+dist/
+
+# Editor / IDE
+.vscode/
+.idea/
+.editorconfig
+.envrc
+.tool-versions
+.python-version
+.nvmrc
+pyrightconfig.json

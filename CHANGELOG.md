@@ -1,0 +1,19 @@
+# Changelog
+
+## v0.1.0 — 2026-08-14
+
+- Extracted pr0xteus into its own reusable Go and Docker project.
+- Hardened the private controller, Docker socket boundary, WireGuard cell, and
+  local configuration workflow.
+- Added a complete local setup, allocation, and private SOCKS5 egress proof
+  guide, plus the matching Claude Code/Codex documentation skill.
+- CI now reports merged unit and Testcontainers controller coverage, publishes
+  both multi-architecture images, syncs Docker Hub metadata, cuts tag releases,
+  and publishes the documentation skill to ClawHub on tagged releases.
+- Published controller images now carry their matching cell reference
+  (`latest` -> `cell-latest`, `vX.Y.Z` -> `cell-vX.Y.Z`), while operators can
+  still override it with an immutable digest.
+- Added the Docker Compose plugin to the development image so `make
+  config-check` actually validates the rendered stack.
+- Existing local `.env` files that name `psyb0t/pr0xteus-cell:dev` now get a
+  non-destructive migration warning from `make config-init`.

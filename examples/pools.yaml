@@ -1,0 +1,12 @@
+# Copy this into ignored secrets/pools.yaml, then replace example-node with
+# the basename of a real *.conf file in ignored secrets/wireguard/.
+pools:
+  primary:
+    region: operator-defined
+    purpose: general-outbound
+    configs:
+      - example-node
+    # Use this map for provider filenames that do not begin with a country
+    # code. It wins over the legacy <cc>-<location> filename convention.
+    exit_countries:
+      example-node: US

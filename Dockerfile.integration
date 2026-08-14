@@ -1,0 +1,37 @@
+# Test-only controller image with native Go coverage instrumentation. The
+# production Dockerfile remains the release artifact; this one writes only
+# ignored GOCOVERDIR data supplied by the Testcontainers fixture.
+FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+COPY vendor/ ./vendor/
+COPY cmd ./cmd
+COPY internal ./internal
+COPY pkg ./pkg
+
+RUN CGO_ENABLED=0 go build -a \
+	-trimpath \
+	-cover \
+	-covermode=atomic \
+	-coverpkg=github.com/psyb0t/pr0xteus/... \
+	-ldflags='-s -w -extldflags "-static"' \
+	-mod=vendor \
+	-o ./build/pr0xteus ./cmd
+
+FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ced453c1cc5f
+
+RUN apk --no-cache add ca-certificates=20260413-r0
+RUN adduser -D -u 1500 -s /bin/sh pr0xteus && \
+	install -d -o pr0xteus -g pr0xteus /app
+
+WORKDIR /app
+
+COPY --from=builder /app/build/pr0xteus .
+RUN chown pr0xteus:pr0xteus /app/pr0xteus
+
+USER pr0xteus
+
+ENTRYPOINT ["./pr0xteus"]
+CMD ["run"]
