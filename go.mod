@@ -3,7 +3,7 @@ module github.com/psyb0t/pr0xteus
 go 1.26.6
 
 require (
-	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/api v1.55.0
 	github.com/psyb0t/ctxerrors v0.7.1
 	github.com/psyb0t/ctxscope v1.0.3
 	github.com/psyb0t/goenv v1.0.10
