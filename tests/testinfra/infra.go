@@ -557,6 +557,158 @@ func (i *Infra) DestroyCell(ctx context.Context, containerID string) error {
 	return nil
 }
 
+// GetCell exercises GET /v1/cells/{containerID} from a sibling container.
+func (i *Infra) GetCell(
+	ctx context.Context, containerID string,
+) (CellSummary, error) {
+	var cell CellSummary
+
+	if i.Consumer == nil {
+		return cell, ctxerrors.New("SOCKS5 consumer is not running")
+	}
+
+	exitCode, output, err := i.Consumer.Exec(ctx, []string{
+		"curl",
+		"--fail-with-body",
+		"--silent",
+		"--show-error",
+		"--header", "Authorization: Bearer " + i.APIToken,
+		"http://" + controllerAlias + ":8000/v1/cells/" + containerID,
+	}, tcexec.Multiplexed())
+	if err != nil {
+		return cell, ctxerrors.Wrap(err, "execute get-cell request")
+	}
+
+	body, err := io.ReadAll(output)
+	if err != nil {
+		return cell, ctxerrors.Wrap(err, "read get-cell response")
+	}
+	if exitCode != 0 {
+		return cell, ctxerrors.Wrapf(
+			ctxerrors.New("non-success response"),
+			"get-cell request failed: %s", strings.TrimSpace(string(body)),
+		)
+	}
+
+	if err := json.Unmarshal(body, &cell); err != nil {
+		return cell, ctxerrors.Wrap(err, "decode get-cell response")
+	}
+
+	return cell, nil
+}
+
+// PoolNames exercises GET /v1/pools from a sibling container, returning the
+// configured pool names.
+func (i *Infra) PoolNames(ctx context.Context) ([]string, error) {
+	if i.Consumer == nil {
+		return nil, ctxerrors.New("SOCKS5 consumer is not running")
+	}
+
+	exitCode, output, err := i.Consumer.Exec(ctx, []string{
+		"curl",
+		"--fail-with-body",
+		"--silent",
+		"--show-error",
+		"--header", "Authorization: Bearer " + i.APIToken,
+		"http://" + controllerAlias + ":8000/v1/pools",
+	}, tcexec.Multiplexed())
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "execute list-pools request")
+	}
+
+	body, err := io.ReadAll(output)
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "read list-pools response")
+	}
+	if exitCode != 0 {
+		return nil, ctxerrors.Wrapf(
+			ctxerrors.New("non-success response"),
+			"list-pools request failed: %s", strings.TrimSpace(string(body)),
+		)
+	}
+
+	var decoded struct {
+		Pools []struct {
+			Name string `json:"name"`
+		} `json:"pools"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, ctxerrors.Wrap(err, "decode list-pools response")
+	}
+
+	names := make([]string, 0, len(decoded.Pools))
+	for _, pool := range decoded.Pools {
+		names = append(names, pool.Name)
+	}
+
+	return names, nil
+}
+
+// HealthzStatus hits the controller's unauthenticated metrics-listener /healthz.
+func (i *Infra) HealthzStatus(ctx context.Context) (int, error) {
+	return i.curlStatus(
+		ctx, "GET", "http://"+controllerAlias+":9091/healthz", false,
+	)
+}
+
+// MetricsStatus hits the controller's unauthenticated /metrics scrape endpoint.
+func (i *Infra) MetricsStatus(ctx context.Context) (int, error) {
+	return i.curlStatus(
+		ctx, "GET", "http://"+controllerAlias+":9091/metrics", false,
+	)
+}
+
+// UnauthenticatedCellsStatus hits GET /v1/cells with no bearer token, to prove
+// the auth gate rejects it.
+func (i *Infra) UnauthenticatedCellsStatus(ctx context.Context) (int, error) {
+	return i.curlStatus(
+		ctx, "GET", "http://"+controllerAlias+":8000/v1/cells", false,
+	)
+}
+
+// curlStatus issues a request from the consumer and returns only the HTTP status
+// code (body discarded), so callers can assert 200/401/etc. without --fail.
+func (i *Infra) curlStatus(
+	ctx context.Context, method, url string, authed bool,
+) (int, error) {
+	if i.Consumer == nil {
+		return 0, ctxerrors.New("SOCKS5 consumer is not running")
+	}
+
+	args := []string{
+		"curl", "--silent", "--output", "/dev/null",
+		"--write-out", "%{http_code}", "--request", method,
+	}
+	if authed {
+		args = append(args, "--header", "Authorization: Bearer "+i.APIToken)
+	}
+
+	args = append(args, url)
+
+	exitCode, output, err := i.Consumer.Exec(ctx, args, tcexec.Multiplexed())
+	if err != nil {
+		return 0, ctxerrors.Wrap(err, "execute status request")
+	}
+
+	body, err := io.ReadAll(output)
+	if err != nil {
+		return 0, ctxerrors.Wrap(err, "read status response")
+	}
+	if exitCode != 0 {
+		return 0, ctxerrors.Wrapf(
+			ctxerrors.New("curl transport failure"),
+			"status probe exit %d: %s", exitCode, strings.TrimSpace(string(body)),
+		)
+	}
+
+	code, err := strconv.Atoi(strings.TrimSpace(string(body)))
+	if err != nil {
+		return 0, ctxerrors.Wrapf(err, "parse status code %q", string(body))
+	}
+
+	return code, nil
+}
+
 // AssertProxyEgress proves a returned private SOCKS5 URL routes a request
 // through the WireGuard peer. The target is an isolated HTTP server on the
 // peer itself, so CI never depends on a public API or provider account.
