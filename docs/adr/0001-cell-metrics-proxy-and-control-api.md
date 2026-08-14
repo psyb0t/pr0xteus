@@ -40,23 +40,33 @@ A small static Go binary run inside the cell instead of `microsocks`:
 - A metrics-recording dialer wraps every target connection to count bytes
   up/down, increment a request counter, and record the destination host:port
   and the live-connection count, aggregated per destination.
+- The cell knows its own identity (its short container ID, from the hostname)
+  and its **parent** — the spawning controller's container ID, passed as
+  `PR0XTEUS_PARENT_ID` — and tags both onto its logs and `/status`.
 - A **control HTTP server bound to the cell's internal (control) interface
   only** — never the egress side — exposing:
-  - `GET /healthz` — real liveness: proxy accepting connections AND the wg
-    handshake is fresh (`wg show` age within bound). Replaces the TTL heuristic.
-  - `GET /stats` — JSON: totals (requests, bytes up/down, active connections)
-    and a bounded top-N destination breakdown.
+  - `GET /healthz` — lightweight liveness (the proxy is accepting connections).
+  - `GET /status` — the full cell picture in one call: identity (cell + parent
+    container IDs), uptime, and the traffic snapshot — totals (requests, bytes
+    up/down, active connections, dial failures) plus a bounded, byte-ranked
+    destination breakdown. Rising dial failures signal a dead tunnel without
+    needing privileged handshake inspection.
 
 This one component fixes all three limitations: real health, live-session
 awareness for reaping, and per-cell request/byte/destination metrics.
 
-### 2. Controller changes
+### 2. Identity, ownership, and discovery
 
-- A cell-stats client scrapes each hot cell's `/healthz` (real health probe) and
-  `/stats` (aggregated into the tunnel view), over the internal control network.
-- `Reaper` uses `/healthz` for health and the live-connection count from `/stats`
-  for session-aware idle-reap (do not reap a cell with active connections).
-- Tunnel/PoolView gain traffic fields sourced from `/stats`.
+- A cell is addressed by its own **docker container ID** — no separate
+  control-plane UUID. The spawner labels each cell `pr0xteus.parent.id=<the
+  controller's own container ID>` (read from the controller's hostname at boot).
+- The controller **auto-detects its children by querying docker** (a
+  `pr0xteus.parent.id=<self>` label filter) whenever needed, then fetches/proxies
+  each child's `/status` and `/healthz` on demand. Docker is the source of
+  truth — no persistent in-memory registry to drift.
+- `Reaper` uses `/healthz` (plus the dial-failure trend) for real health instead
+  of the TTL heuristic, and the live-connection count from `/status` for
+  session-aware idle-reap (do not reap a cell with active connections).
 
 ### 3. Spec-first control API
 
@@ -64,10 +74,11 @@ awareness for reaping, and per-cell request/byte/destination metrics.
   `cmd/apigen` (as gitrakz does); generate server interface + types + a client
   SDK; wire generated handlers onto `aichteeteapee`.
 - Existing: `POST /v1/proxies`, `GET /v1/pools`. New:
-  - `GET /v1/cells` — flat list of every cell across pools, with state, exit,
-    and the `/stats` traffic view.
-  - `DELETE /v1/cells/{id}` — destroy a cell on demand (reuses the reaper's
-    `killTunnel`).
+  - `GET /v1/cells` — list every child cell (docker query by parent label),
+    each with its `/status` view.
+  - `GET /v1/cells/{containerID}` — one cell, proxying its `/status`.
+  - `DELETE /v1/cells/{containerID}` — destroy a cell on demand (reuses the
+    reaper's `killTunnel`).
 
 ## Consequences
 

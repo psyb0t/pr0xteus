@@ -12,6 +12,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.44.0
+	github.com/things-go/go-socks5 v0.1.1
 	golang.org/x/net v0.57.0
 )
 
