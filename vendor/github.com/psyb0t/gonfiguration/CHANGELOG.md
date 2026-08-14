@@ -2,6 +2,60 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.6.4 — 2026-08-08
+
+Documentation. No code change.
+
+- The section headed "Complete API Reference" documents the eight exported
+  functions but not the sentinel errors, which live under Error Handling. It is
+  now "API Reference" and points at where the sentinels are, so the heading no
+  longer promises more than the section delivers.
+
+## v1.6.3 — 2026-08-08
+
+Repository infrastructure only, no library change.
+
+- Added the imported-by badge: a count of the public packages importing this
+  module, linking to `importers.md` on the `badges` branch — the importing
+  repositories, grouped, package counts descending, and flagged when the owner
+  differs from this repo's.
+- It measures **blast radius, not adoption**. The distinction matters here
+  because this library has no stars and is nonetheless imported by more packages
+  than anything else in the fleet — nobody stars a config parser, they just
+  import it. The count is what tells you how much breaks if an exported name
+  moves; the external mark is what tells you whether any of it is someone else's
+  problem.
+- Refreshed weekly rather than daily. pkg.go.dev's crawl lags publication by
+  days, so a daily run would re-derive an unchanged number six extra times a
+  week, each dragging the full test suite along because the badges job needs the
+  coverage artifact. The whole pipeline runs, not a badges-only job: the badge
+  publisher republishes only what a run produced, so a badge-only refresh would
+  delete the coverage, version and license badges.
+- The cron slot is derived from a hash of the repository name rather than
+  chosen. GitHub cron has no randomness, and its scheduler sheds queued runs
+  hardest at the round times a human would pick.
+
+## v1.6.2 — 2026-08-01
+
+Repository infrastructure only, no library change.
+
+- Every push now mirrors the repo to GitLab and Codeberg, so the source stays
+  fetchable if GitHub is unavailable. Gitee is wired but left off — it binds
+  repo creation to a mobile number and silently creates the repo private
+  without one.
+- Pushes to the default branch and every tag are archived to the Wayback
+  Machine and Software Heritage, through the authenticated Save Page Now API,
+  with README outlinks captured too. Feature-branch pushes are skipped because
+  the archive is rate-limited.
+- Issues filed on the Codeberg and GitLab mirrors are pulled back into GitHub
+  every six hours, so a bug reported on a mirror reaches the same tracker.
+  Scheduled runs jitter to avoid stampeding the mirrors; a manual run does not.
+- `.dockerignore` keeps the local `.telemetry/` scratch dir out of any build
+  context.
+
+The Go code, the public API and `go.mod` are untouched — `v1.6.2` is byte-for-byte
+`v1.6.1` as far as the library is concerned.
+
 ## v1.6.1 — 2026-07-31
 
 CI only, no library change.

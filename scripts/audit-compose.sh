@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly log_file="${LOG_FILE:-/tmp/pr0xteus-audit-compose.log}"
 readonly compose_file="${1:-docker-compose.yml}"
+# shellcheck disable=SC2016  # literal string matched against compose lines; ${...} must NOT expand
 readonly controller_image_reference='image: ${PR0XTEUS_CONTROLLER_IMAGE:'
 
 json_escape() {
@@ -95,6 +96,16 @@ if service_has_network docker-socket-proxy egress; then
 	exit 1
 fi
 
+if ! service_has_network tailscale control || ! service_has_network tailscale tailnet; then
+	log ERROR "Tailscale must bridge only the control and tailnet networks"
+	exit 1
+fi
+
+if service_has_network pr0xteus tailnet || service_has_network docker-socket-proxy tailnet; then
+	log ERROR "only the Tailscale sidecar may join the tailnet network"
+	exit 1
+fi
+
 while IFS= read -r image_line; do
 	if [[ "$image_line" == *"$controller_image_reference"* ]]; then
 		continue
@@ -116,5 +127,9 @@ require_pattern 'max-size:\s*"10m"' 'every service needs capped Docker JSON logs
 require_pattern 'internal:\s*true' 'control network must remain internal'
 require_pattern 'PR0XTEUS_API_TOKEN:' 'controller token must come from ignored .env'
 require_pattern 'PR0XTEUS_CONFIG_DIR:' 'controller config root must be explicit'
+require_pattern 'profiles:\s*\["tailscale"\]' 'Tailscale must stay opt-in'
+require_pattern 'TS_STATE_DIR:\s*/var/lib/tailscale' 'Tailscale state must persist'
+require_pattern 'TS_USERSPACE:\s*"false"' 'Tailscale must use its own kernel tunnel'
+require_pattern 'target:\s*/dev/net/tun' 'Tailscale needs the explicit TUN device'
 
 log INFO "Compose static hardening audit passed path=$compose_file"

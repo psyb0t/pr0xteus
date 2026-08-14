@@ -12,6 +12,8 @@ CODEX.local.md
 .brutal_reviews/
 .rule_audits/
 .telemetry/
+.backup
+scripts/.post-update-temp
 PLAN.md
 implplan.md
 NOTES.md

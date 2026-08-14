@@ -1,99 +1,123 @@
 # Architecture
 
-pr0xteus is a small control plane for short-lived, WireGuard-backed SOCKS5
-proxies. It does not accept arbitrary Docker or network instructions from an
-API caller: the operator supplies a local pool policy, and the caller can only
-request a configured country or pool.
+Servicepack is a clone-and-own application skeleton. It gives a project a
+well-defined process lifecycle and a place for multiple services; it does not
+require every future deployment to stay inside one binary.
 
-Want the operator-facing version with actual files and commands? Read
-[complete-example.md](complete-example.md). This document explains why the
-boundaries exist; the controller state machine is in
-[internal/README.md](../internal/README.md), and the firewall and boot detail
-is in [cell/README.md](../cell/README.md).
+## Runtime shape
 
-## Components
-
-```text
-authenticated caller
-        │ POST /v1/proxies
-        ▼
-pr0xteus orchestrator ── restricted Docker socket proxy ── Docker daemon
-        │                         │
-        │ private egress network  │ only container operations
-        ▼                         ▼
-cell: WireGuard + microSocks ── WireGuard endpoint
+```
+cmd/main.go
+  ├─ set global log scope: binary, commit
+  ├─ services.Init()                         generated factory registration
+  └─ Cobra "run"
+       └─ pkg/runner
+            ├─ signal / parent-context handling
+            └─ internal/app.App
+                 ├─ pre-run hooks
+                 ├─ internal/pkg/service-manager
+                 │    └─ service factories → services running concurrently
+                 └─ post-stop hooks
 ```
 
-- **Orchestrator** — a non-root Go service that validates the request, chooses
-  a configured WireGuard file, starts at most one hot cell per pool, and
-  reaps idle or unhealthy cells.
-- **Docker socket proxy** — the only Compose service allowed to see the raw
-  Docker socket. It exposes only the Docker API subset needed for cell
-  lifecycle operations to the orchestrator.
-- **Cell** — a one-tunnel container. It receives one read-only WireGuard file,
-  brings up `wg0`, installs a default-drop firewall, waits for a handshake,
-  then drops to an unprivileged user and serves SOCKS5.
+`cmd/main.go` is intentionally small: establish process identity, register
+generated service factories, expose `run` and command namespaces, then pass
+control to the runner. The [runner README](../pkg/runner/README.md) explains
+the signal and deadline rules.
 
-The code-level state machine, Docker settings, and cleanup rules are in
-[`internal/README.md`](../internal/README.md). The cell boot sequence is in
-[`cell/README.md`](../cell/README.md).
+`internal/app` owns application-level hooks and delegates service execution to
+the [service manager](../internal/pkg/service-manager/README.md). `App` is the
+place for whole-process behavior; individual services should not reach across
+into siblings to create their own lifecycle graph.
 
-## Network boundaries
+## Local composition and deployment choices
 
-The Compose stack uses two explicit networks:
+During local development, keeping related services in one process makes
+debugging concrete: one binary, one cancellation path, one structured log
+stream, and direct visibility into failures. This is the default development
+shape:
 
-- `pr0xteus-control` is internal. It connects the controller to the restricted
-  socket proxy; no host port or public egress is exposed from that network.
-- `pr0xteus-egress` lets cells reach their WireGuard peers. The controller also
-  joins it solely to probe a freshly-started cell's private SOCKS5 listener.
-
-The controller's API and metrics ports bind to `127.0.0.1` on the host. Put a
-separate authenticated reverse proxy or tailnet endpoint in front only when
-you genuinely need remote access.
-
-## Pool policy
-
-`secrets/pools.yaml` is local and ignored. A pool contains a list of approved
-configuration basenames, with an optional fallback pool. `config/egress-routing.yaml`
-maps requested ISO country codes to these logical pools.
-
-The default filename convention is `<country>-<location>.conf`, which produces
-the exit country from its prefix. That is a compatibility fallback, not a
-provider requirement: use `exit_countries` in a pool for arbitrary filenames.
-
-```yaml
-pools:
-  primary:
-    configs: [edge-a, edge-b]
-    exit_countries:
-      edge-a: GB
-      edge-b: GB
+```
+my-service process
+  ├─ api service
+  ├─ worker service
+  ├─ scheduler service
+  └─ migration command namespace
 ```
 
-The API cannot select a filename, bind mount, image, network, or Docker option.
-Those are configuration-time concerns owned by the operator.
+Production has two valid shapes:
 
-## Lifecycle
+```
+one release unit                      independently deployed units
+----------------                      ----------------------------
+my-service binary                     api binary ──────┐
+  ├─ api                               worker binary ───┼─ explicit HTTP/gRPC/queue contracts
+  ├─ worker                            scheduler binary ┘
+  └─ scheduler
+```
 
-1. A caller submits an authenticated request containing exactly one of
-   `country` or `pool`.
-2. The manager uses the routing policy, reuses a suitable hot tunnel, or picks
-   a non-recently-failed configuration from that pool.
-3. The cell is created with `NET_ADMIN`, `/dev/net/tun`, a read-only config
-   file, resource caps, bounded logs, and no Docker socket.
-4. The controller returns a SOCKS5 URL only after the cell has completed its
-   handshake wait and accepts a private TCP probe.
-5. The idle reaper removes unused or unhealthy cells. A fresh process reaps
-   only cells labelled as leftovers from the same controller-managed scope,
-   never cells managed by another controller on the same Docker daemon.
+Choose one binary when the services have the same release cadence and
+operational boundary. Split when they need separate scaling, ownership,
+security boundaries, or failure isolation. Splitting is an architecture change:
+replace in-process calls and service-manager dependency declarations with
+explicit APIs, messages, authentication, retries, observability, and deploy
+configuration.
 
-The returned SOCKS5 URL is a capability to use one private cell, not a claim
-that the cell remains alive forever. A client should request a replacement
-when a SOCKS connection fails, passing the old URL as `excludeProxy`.
+`SERVICES_ENABLED` is useful for a partial local run within one binary; it is
+not a microservice deployment system.
 
-## Observability
+## Source ownership
 
-`/metrics` exposes Prometheus counters, gauges, and durations for spawn,
-acquire, and reap decisions. `/healthz` says the metrics listener is serving;
-it does not prove that a provider tunnel is currently available. Operator API
-requests are logged as structured JSON without bearer tokens or config values.
+| Path | Role | Ownership after `make own` |
+| --- | --- | --- |
+| `cmd/main.go` | Process entry point and root CLI. | Framework |
+| `cmd/init.go` | Extra handlers and application hooks. | Project |
+| `cmd/commands.go` | App-level CLI commands. | Project |
+| `internal/app/` | App lifecycle wrapper. | Framework |
+| `internal/pkg/service-manager/` | Concurrency, dependency, retry, and stop semantics. | Framework |
+| `internal/pkg/services/` | Business services and `services.gen.go`. | Project; generated registration is not hand-edited. |
+| `pkg/runner/` | Signal-aware runner. | Framework |
+| `scripts/make/servicepack/` | Updateable Make implementations. | Framework |
+| `scripts/make/` | Project-specific target overrides. | Project |
+| `Makefile.servicepack` | Framework Make target definitions. | Framework |
+| `Makefile` | Project targets and overrides. | Project |
+
+Framework-owned means an update may replace it. Project-owned means the
+update's normal exclusion policy preserves it. See
+[framework updates](framework-updates.md) before changing that boundary.
+
+## Registration and lazy construction
+
+`make service-registration` runs the generator that discovers `Service`
+implementations and writes `internal/pkg/services/services.gen.go`. The
+generated code registers factories rather than fully constructed services.
+
+That distinction matters:
+
+- `run` instantiates all enabled factories;
+- a per-service Cobra command instantiates only that one service;
+- connections and config parsing happen in a service's `New`, not at package
+  import time.
+
+This keeps command execution from accidentally opening every database/client
+in the project. Details are in the
+[service-manager README](../internal/pkg/service-manager/README.md).
+
+## Observability and configuration
+
+Logging starts with the `slogging` handler setup and flows through `ctxscope`.
+The binary and build commit are global scope; the service manager adds a
+`service` field while it runs or stops a service. Preserve and extend the
+context passed into `Run`; it carries cancellation and those fields together.
+
+Configuration is typed and parsed at each service boundary with
+`gonfiguration`. Framework settings are documented in
+[getting started](getting-started.md); application settings belong in the
+project's own docs and config examples.
+
+## Build and test topology
+
+The Makefile runs tooling in Docker. Test targets additionally receive Docker
+access for Testcontainers. The development model, coverage boundary, and
+override mechanism are documented in [development](development.md), with the
+exact script behavior in the [Make-script README](../scripts/make/servicepack/README.md).

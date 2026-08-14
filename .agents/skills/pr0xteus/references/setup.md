@@ -8,35 +8,31 @@ allowed to use.
 
 For the full operator walkthrough, see
 [docs/complete-example.md](../../../../docs/complete-example.md). This page is
-the agent fast path: use the published image, do not invent paths, tokens, or
-Docker flags.
+the agent fast path: use the published image and its installer; do not invent
+paths, tokens, or Docker flags.
 
 ## Operator setup
 
 ```bash
-mkdir pr0xteus && cd pr0xteus
-curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
-  psyb0t/pr0xteus:latest config init \
-  --config-dir /config --host-config-dir "$PWD"
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-The image creates ignored local files only when absent:
+The installer creates ignored local files only when absent:
 
 ```text
-secrets/wireguard/*.conf      real provider or private-network files
-secrets/pools.yaml            approved logical pools
-config/egress-routing.yaml    country -> pool policy
-.env                          bearer token, host path, image and ports
+~/.pr0xteus/secrets/wireguard/*.conf      real provider or private-network files
+~/.pr0xteus/secrets/pools.yaml            approved logical pools
+~/.pr0xteus/config/egress-routing.yaml    country -> pool policy
+~/.pr0xteus/.env                           bearer token, host path, image and ports
 ```
 
 The bearer token is `PR0XTEUS_API_TOKEN` in owner-only `.env`, not a separate
-secret file. The controller must see the WireGuard bundle at its **same
-absolute host path**, because it asks Docker to bind one chosen file into a
-cell.
+secret file. The installer owns the absolute host path the controller needs
+when it asks Docker to bind one chosen file into a cell.
 
-Put an authorized `*.conf` file in `secrets/wireguard/`, then make the policy
-match its basename. A file named `us-example.conf` uses `us-example` below:
+Put an authorized `*.conf` file in `~/.pr0xteus/secrets/wireguard/`, then make
+the policy match its basename. A file named `us-example.conf` uses `us-example`
+below:
 
 ```yaml
 pools:
@@ -54,24 +50,28 @@ country_to_pool:
 default_pool: us
 ```
 
-Validate and start the image-first deployment:
+Start the image-first deployment:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
-  psyb0t/pr0xteus:latest config check --config-dir /config
-docker compose pull
-docker compose up -d
+pr0xteus start
 curl --fail --silent http://127.0.0.1:9091/healthz
 ```
 
-`latest` carries `cell-latest`; a versioned controller carries its matching
+`pr0xteus start` checks the local token, WireGuard bundle, pools, and routing
+before it starts containers. `latest` carries `cell-latest`; a versioned controller carries its matching
 versioned cell. Do not set `PR0XTEUS_CELL_IMAGE` unless an operator explicitly
 needs an override; that override must contain an immutable digest.
+
+The installer pins to the latest tagged release, not `:latest`. Lifecycle
+commands: `pr0xteus stop`, `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
+(re-pin to the newest release and drop the old image), and `pr0xteus uninstall`
+(prompts before deleting `~/.pr0xteus`). Append `--rolling` to `start`/`upgrade`
+to use the moving `:latest` image for one run.
 
 ## Allocate and prove a proxy
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' .env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(

@@ -6,17 +6,18 @@
 [![coverage](https://raw.githubusercontent.com/psyb0t/pr0xteus/badges/coverage.svg)](https://github.com/psyb0t/pr0xteus/actions/workflows/pipeline.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/psyb0t/pr0xteus?style=flat-square)](https://hub.docker.com/r/psyb0t/pr0xteus)
 
-WireGuard-backed SOCKS5 tunnel pools for services that need a configured exit
-without turning your Docker host into an open proxy.
-
-You keep the WireGuard files, decide which countries and pools exist, and keep
-the controller private. A trusted workload asks for one approved route; it
-gets a private SOCKS5 cell only after the WireGuard handshake is up.
+Your Docker services need to leave through a VPN, but you do not want to hand
+them a provider account, turn the host into a VPN client, or accidentally run
+an open proxy. pr0xteus is the small private control plane between those
+things: give it WireGuard files you are allowed to use, and trusted containers
+get short-lived SOCKS5 exits from the pools you approve.
 
 ## Contents
 
 - [What it does](#what-it-does)
 - [Quick start](#quick-start)
+- [Tailscale](#tailscale)
+- [Run it yourself](#run-it-yourself)
 - [Complete example](#complete-example)
 - [How it is wired](#how-it-is-wired)
 - [Configuration](#configuration)
@@ -43,45 +44,150 @@ an image, a host path, or a provider config.
 
 ## Quick start
 
-You need Linux, Docker with the built-in `docker compose` command, and a real
-WireGuard configuration bundle from a provider or network you are authorized to use.
+You need Linux, Docker, and a WireGuard `.conf` file from a VPN provider or
+private network you are allowed to use. Docker already includes Compose, so
+there is no separate Compose install dance.
+
+### Install it
 
 ```bash
-mkdir pr0xteus && cd pr0xteus
-curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+```
+
+That makes `~/.pr0xteus/`, puts the local `docker-compose.yml` and starter
+config there, generates a bearer token in owner-only `.env`, and installs the
+`pr0xteus` command. No source checkout required. It pins to the **latest
+tagged release** — never `:latest` on your box — and the controller derives its
+matching cell image from that tag, so both move together only when you upgrade.
+
+Right after installing, edit `~/.pr0xteus/.env` if you want to change the
+loopback ports, tune logging, or turn on the optional tailnet API (below) —
+everything is a plain key you edit, not a CLI flag to remember.
+
+Want to track `main` instead of a release? Add `--rolling` to force the moving
+`:latest` image for a single run — on the installer
+(`… | sudo bash -s -- --rolling`) or on any `pr0xteus start` / `pr0xteus upgrade`.
+
+### Give it one WireGuard exit
+
+Copy your provider or private-network file into the config directory:
+
+```bash
+cp /wherever/you/keep/your-vpn.conf ~/.pr0xteus/secrets/wireguard/us.conf
+```
+
+Then edit these two small files so `us` means your file without `.conf` and
+`US` is the country you want callers to request:
+
+```yaml
+# ~/.pr0xteus/secrets/pools.yaml
+pools:
+  us:
+    region: north-america
+    purpose: private-service-egress
+    configs: [us]
+    exit_countries:
+      us: US
+```
+
+```yaml
+# ~/.pr0xteus/config/egress-routing.yaml
+country_to_pool:
+  US: us
+default_pool: us
+```
+
+Start it:
+
+```bash
+pr0xteus start
+```
+
+The controller stays private on `http://127.0.0.1:8000`; metrics and health
+stay on `http://127.0.0.1:9091`. Useful commands are deliberately boring:
+
+```bash
+pr0xteus status
+pr0xteus logs --follow
+pr0xteus stop
+pr0xteus upgrade     # re-pin to the newest release, pull it, drop the old image
+pr0xteus uninstall   # stop the stack, remove the command, ask before deleting data
+```
+
+`upgrade` re-pins `~/.pr0xteus/.env` to the latest release and removes the
+previous image so dangling layers don't pile up; `uninstall` only deletes your
+`~/.pr0xteus` data and volumes if you say yes at the prompt.
+
+The [complete example](docs/complete-example.md) shows an allocation, a
+private SOCKS5 consumer, and an actual egress proof.
+
+## Tailscale
+
+Want the same private API from another machine without opening a host port?
+Give the installed stack its own Tailscale identity. Add these lines to
+`~/.pr0xteus/.env`:
+
+```dotenv
+PR0XTEUS_TAILSCALE_ENABLED=true
+TS_AUTHKEY=your-tailscale-auth-key
+TS_HOSTNAME=pr0xteus
+```
+
+Then run:
+
+```bash
+pr0xteus start
+```
+
+That starts an optional sidecar in its own network namespace, waits for it to
+join your tailnet, and configures Tailscale Serve to proxy
+`http://pr0xteus/v1/...` to the private controller. It exposes no host port,
+does not touch a host Tailscale client, and still requires the bearer token.
+The sidecar's tailnet state lives in `~/.pr0xteus/tailscale/state`, so it keeps
+the same identity across restarts. For Headscale, add its login argument to
+`TS_EXTRA_ARGS`.
+
+## Run it yourself
+
+The wrapper is the normal operator path. If you want every Docker command in
+front of you, initialize the same local stack directly:
+
+```bash
+mkdir -p ~/.pr0xteus
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$HOME/.pr0xteus:/config" \
   psyb0t/pr0xteus:latest config init \
-  --config-dir /config --host-config-dir "$PWD"
+  --config-dir /config \
+  --host-config-dir "$HOME/.pr0xteus" \
+  --controller-image psyb0t/pr0xteus:latest
 ```
 
-That pulls no source code. It creates the ignored `.env`, puts an editable
-pool skeleton at `secrets/pools.yaml`, and writes routing policy at
-`config/egress-routing.yaml`. The generated bearer token stays in `.env` with
-owner-only permissions; it is not a Compose secret file.
-
-Put real WireGuard files under `secrets/wireguard/`, replace `example-node` in
-`secrets/pools.yaml` with their basenames, then validate and start it:
+Add your WireGuard file and edit the generated pool and routing files exactly
+as in [Quick start](#quick-start). Validate and start it with Docker itself:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$HOME/.pr0xteus:/config:ro" \
   psyb0t/pr0xteus:latest config check --config-dir /config
-docker compose pull
-docker compose up -d
+
+docker compose --project-directory "$HOME/.pr0xteus" \
+  --env-file "$HOME/.pr0xteus/.env" \
+  -f "$HOME/.pr0xteus/docker-compose.yml" \
+  up --detach --pull always
 ```
 
-The controller is then private
-on `http://127.0.0.1:8000`; metrics and health live on
-`http://127.0.0.1:9091`. The
-[complete example](docs/complete-example.md) shows the exact config, a real
-allocation, and a private SOCKS5 egress proof.
+That local `docker-compose.yml` is generated by the image and is yours to
+inspect or run directly. The wrapper is only a small guardrail around these
+same commands. [Deployment details](docs/deploy.md) include the direct
+Tailscale command too.
 
 ## Complete example
 
-The [operator walkthrough](docs/complete-example.md) starts with an empty
-checkout, maps a real WireGuard file into a logical country pool, explains the
-absolute-host-path gotcha, starts the private stack, then proves a transient
-consumer actually exits through its returned SOCKS5 URL. It also covers
-replacing a bad allocation and why a health check is not a live-tunnel check.
+The [operator walkthrough](docs/complete-example.md) starts with the installer,
+maps a real WireGuard file into a logical country pool, starts the private
+stack, then proves a transient consumer actually exits through its returned
+SOCKS5 URL. It also covers replacing a bad allocation and why a health check
+is not a live-tunnel check.
 
 ## How it is wired
 
@@ -105,30 +211,24 @@ implementation detail in [internal/README.md](internal/README.md) and
 
 ## Configuration
 
-All sensitive or provider-specific material is ignored by Git and excluded
-from Docker build contexts:
+All sensitive or provider-specific material lives under `~/.pr0xteus/`, stays
+out of Git, and stays out of Docker build contexts:
 
 - `secrets/wireguard/*.conf` — real WireGuard files.
 - `secrets/pools.yaml` — named pools and their approved config basenames.
 - `config/egress-routing.yaml` — country-to-pool policy.
 - `.env` — the private bearer token, absolute host configuration path, and image selection.
 
-Start from [.env.example](.env.example). A published controller already names
-its matching cell: `latest` uses `cell-latest`, while `vX.Y.Z` uses
-`cell-vX.Y.Z`. An operator can override `PR0XTEUS_CELL_IMAGE`, but that
-override must be pinned by digest. Local development uses the locally built
-`psyb0t/pr0xteus:cell-dev` with the explicit unpinned escape hatch in the
-generated `.env`.
+The installer writes `.env`; it is not something you need to create by hand.
+A published controller already names its matching cell: `latest` uses
+`cell-latest`, while `vX.Y.Z` uses `cell-vX.Y.Z`. An operator can override
+`PR0XTEUS_CELL_IMAGE`, but that override must be pinned by digest. Local
+development uses the locally built `psyb0t/pr0xteus:cell-dev` with the explicit
+unpinned escape hatch in the generated `.env`.
 
-For a versioned release, pass the same tag to the initializer so `.env` uses
-that exact controller image:
-
-```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
-  psyb0t/pr0xteus:vX.Y.Z config init \
-  --config-dir /config --host-config-dir "$PWD" \
-  --controller-image psyb0t/pr0xteus:vX.Y.Z
-```
+To stay on a particular release, change
+`PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in
+`~/.pr0xteus/.env`, run `pr0xteus setup`, then run `pr0xteus start`.
 
 Pool filenames need not be provider-specific. For a file that does not follow
 the legacy `<country>-<location>.conf` convention, add its country explicitly:
@@ -201,7 +301,7 @@ Everything supported goes through Make. Go tooling, formatting, linting, and
 tests run inside `Dockerfile.dev`, not through a host Go installation.
 
 Source checkout and Make are for development only; an operator uses the image
-and `docker compose` quick start above.
+and the installer quick start above.
 
 ```bash
 make help          # every supported operation
@@ -255,6 +355,10 @@ re-implementing the HTTP contract.
   controller or cells.
 - The controller is non-root, read-only, capability-empty, resource-capped,
   log-capped, and exposes only loopback ports.
+- Optional tailnet access is a separate, capability-minimized Tailscale
+  sidecar. It is the only service with `/dev/net/tun`, `NET_ADMIN`, and
+  `NET_RAW`; it has its own tailnet identity and exposes only the authenticated
+  controller API through Tailscale Serve.
 - A cell has the specific WireGuard exception: `NET_ADMIN` and `/dev/net/tun`,
   plus `SETUID`/`SETGID` solely for its one-way final drop to the non-root
   microSocks account. It begins with default-drop firewall policy, allows the

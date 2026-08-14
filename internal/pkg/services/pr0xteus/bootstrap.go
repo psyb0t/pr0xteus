@@ -23,10 +23,12 @@ const (
 	randomTokenBytes       = 32
 
 	dotEnvFileName      = ".env"
-	apiTokenEnvName     = "PR0XTEUS_API_TOKEN"
+	composeFileName     = "docker-compose.yml"
+	apiTokenEnvName     = "PR0XTEUS_API_TOKEN" //nolint:gosec // G101 flags the env var NAME, not a secret value
 	poolsRelativePath   = "secrets/pools.yaml"
 	bundleRelativePath  = "secrets/wireguard"
 	routingRelativePath = "config/egress-routing.yaml"
+	tailscaleStatePath  = "tailscale/state"
 )
 
 //go:embed bootstrap/pools.yaml
@@ -34,6 +36,9 @@ var defaultPoolsYAML []byte
 
 //go:embed bootstrap/egress-routing.yaml
 var defaultRoutingYAML []byte
+
+//go:embed bootstrap/docker-compose.yml
+var defaultComposeYAML []byte
 
 // BootstrapOptions defines where config init writes local operator material.
 // HostConfigDir is the absolute host path Docker later bind-mounts into the
@@ -75,40 +80,13 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 		return BootstrapResult{}, err
 	}
 
-	result := BootstrapResult{}
-
-	for _, directory := range []string{
-		filepath.Join(configDir, "secrets"),
-		filepath.Join(configDir, bundleRelativePath),
-		filepath.Join(configDir, "config"),
-	} {
-		if err := ensurePrivateDirectory(directory); err != nil {
-			return BootstrapResult{}, err
-		}
+	if err := createBootstrapDirectories(configDir); err != nil {
+		return BootstrapResult{}, err
 	}
 
-	for _, file := range []struct {
-		path         string
-		operatorPath string
-		data         []byte
-	}{
-		{
-			filepath.Join(configDir, poolsRelativePath),
-			filepath.Join(hostConfigDir, poolsRelativePath),
-			defaultPoolsYAML,
-		},
-		{
-			filepath.Join(configDir, routingRelativePath),
-			filepath.Join(hostConfigDir, routingRelativePath),
-			defaultRoutingYAML,
-		},
-	} {
-		created, err := writeFileIfAbsent(file.path, file.data)
-		if err != nil {
-			return BootstrapResult{}, err
-		}
-
-		result.add(file.operatorPath, created)
+	result := BootstrapResult{}
+	if err := writeBootstrapFiles(configDir, hostConfigDir, &result); err != nil {
+		return BootstrapResult{}, err
 	}
 
 	token, err := newAPIToken()
@@ -117,6 +95,7 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 	}
 
 	envPath := filepath.Join(configDir, dotEnvFileName)
+
 	created, err := writeFileIfAbsent(
 		envPath,
 		[]byte(renderEnvFile(hostConfigDir, controllerImage, token, options.Development)),
@@ -128,6 +107,58 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 	result.add(filepath.Join(hostConfigDir, dotEnvFileName), created)
 
 	return result, nil
+}
+
+func createBootstrapDirectories(configDir string) error {
+	for _, directory := range []string{
+		filepath.Join(configDir, "secrets"),
+		filepath.Join(configDir, bundleRelativePath),
+		filepath.Join(configDir, "config"),
+		filepath.Join(configDir, tailscaleStatePath),
+	} {
+		if err := ensurePrivateDirectory(directory); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeBootstrapFiles(configDir, hostConfigDir string, result *BootstrapResult) error {
+	type bootstrapFile struct {
+		path         string
+		operatorPath string
+		data         []byte
+	}
+
+	files := []bootstrapFile{
+		{
+			filepath.Join(configDir, poolsRelativePath),
+			filepath.Join(hostConfigDir, poolsRelativePath),
+			defaultPoolsYAML,
+		},
+		{
+			filepath.Join(configDir, routingRelativePath),
+			filepath.Join(hostConfigDir, routingRelativePath),
+			defaultRoutingYAML,
+		},
+		{
+			filepath.Join(configDir, composeFileName),
+			filepath.Join(hostConfigDir, composeFileName),
+			defaultComposeYAML,
+		},
+	}
+
+	for _, file := range files {
+		created, err := writeFileIfAbsent(file.path, file.data)
+		if err != nil {
+			return err
+		}
+
+		result.add(file.operatorPath, created)
+	}
+
+	return nil
 }
 
 // CheckConfig validates the bearer token, WireGuard bundle, pools, and routing
@@ -241,6 +272,7 @@ func ensurePrivateDirectory(path string) error {
 
 		return nil
 	}
+
 	if err != nil {
 		return ctxerrors.Wrap(err, "stat config directory")
 	}
@@ -261,6 +293,7 @@ func writeFileIfAbsent(path string, contents []byte) (bool, error) {
 
 		return false, nil
 	}
+
 	if !os.IsNotExist(err) {
 		return false, ctxerrors.Wrap(err, "stat config file")
 	}
@@ -299,6 +332,7 @@ func loadAPITokenFromDotEnv(path string) ([]byte, error) {
 	if err != nil {
 		return nil, ctxerrors.Wrap(err, "open .env")
 	}
+
 	defer func() {
 		_ = file.Close() // read-only close cannot change the validation result.
 	}()
@@ -347,6 +381,10 @@ func renderEnvFile(
 		apiTokenEnvName + "=" + apiToken,
 		"PR0XTEUS_HTTP_PORT=8000",
 		"PR0XTEUS_METRICS_PORT=9091",
+		"PR0XTEUS_TAILSCALE_ENABLED=false",
+		"TS_AUTHKEY=",
+		"TS_HOSTNAME=pr0xteus",
+		"TS_EXTRA_ARGS=--accept-dns=false",
 		"LOG_LEVEL=info",
 		"LOG_FORMAT=json",
 		"LOG_ADD_SOURCE=true",

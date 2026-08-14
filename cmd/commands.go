@@ -37,6 +37,7 @@ func buildConfigInitCommand() *cobra.Command {
 			for _, path := range result.Created {
 				command.Printf("created %s\n", path)
 			}
+
 			for _, path := range result.Preserved {
 				command.Printf("preserved %s\n", path)
 			}
@@ -71,6 +72,7 @@ func buildConfigInitCommand() *cobra.Command {
 		false,
 		"write local image tags for source development",
 	)
+
 	return command
 }
 

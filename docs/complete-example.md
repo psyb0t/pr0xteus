@@ -1,57 +1,46 @@
 # Complete image-first setup and a real SOCKS5 proof
 
-This is the operator path: pull the published image, generate only ignored
-local configuration, start it with `docker compose`, then allocate one private
-WireGuard-backed SOCKS5 exit. You need Linux, Docker with the built-in `docker
-compose` command, and WireGuard material you are authorized to use. pr0xteus
-does not create a VPN account or fetch provider configuration for you.
+This is the operator path: install the published image, add your own authorized
+WireGuard configuration, start the private stack, then allocate one SOCKS5
+exit. You need Linux and Docker; `docker compose` is already part of Docker.
+pr0xteus does not create a VPN account or fetch provider configuration for you.
 
 For component detail, see [architecture.md](architecture.md),
 [api.md](api.md), [internal/README.md](../internal/README.md), and
 [cell/README.md](../cell/README.md).
 
-## 1. Create the local deployment directory
+## 1. Install it
 
 ```bash
-mkdir pr0xteus && cd pr0xteus
-curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
-  psyb0t/pr0xteus:latest config init \
-  --config-dir /config --host-config-dir "$PWD"
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-The initializer is non-destructive. It creates these local, ignored files only
-when missing:
+The installer creates `~/.pr0xteus/`, writes its local `docker-compose.yml`,
+and installs the `pr0xteus` command. It only creates these local files when
+they are missing:
 
 ```text
-secrets/wireguard/           put real *.conf files here
-secrets/pools.yaml           approved logical pools
-config/egress-routing.yaml   requested country -> pool mapping
-.env                         bearer token, host path, image and ports
+~/.pr0xteus/secrets/wireguard/           put real *.conf files here
+~/.pr0xteus/secrets/pools.yaml            approved logical pools
+~/.pr0xteus/config/egress-routing.yaml    requested country -> pool mapping
+~/.pr0xteus/.env                          bearer token, host path, image and ports
 ```
 
 `.env` is mode `0600`; it contains `PR0XTEUS_API_TOKEN`. Keep it local. There
 is no separate Compose `secrets/` token file.
 
-To deploy a fixed controller release, replace `latest` consistently:
-
-```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
-  psyb0t/pr0xteus:vX.Y.Z config init \
-  --config-dir /config --host-config-dir "$PWD" \
-  --controller-image psyb0t/pr0xteus:vX.Y.Z
-```
-
 The controller carries its matching cell reference: `latest` carries
-`cell-latest`; `vX.Y.Z` carries `cell-vX.Y.Z`. Do not set a cell override
-unless you need one; if you do, it must include an immutable digest.
+`cell-latest`; `vX.Y.Z` carries `cell-vX.Y.Z`. To pin a release, set
+`PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.pr0xteus/.env`, then
+run `pr0xteus setup`. Do not set a cell override unless you need one; if you
+do, it must include an immutable digest.
 
 ## 2. Add a real WireGuard file and policy
 
 Put a provider or private-network file at:
 
 ```text
-secrets/wireguard/us-example.conf
+~/.pr0xteus/secrets/wireguard/us-example.conf
 ```
 
 The name used in the pool is the filename without `.conf`. Replace the pool
@@ -78,20 +67,41 @@ default_pool: us
 `exit_countries` is required for filenames that do not communicate their exit
 country. It beats the old filename guess.
 
-## 3. Validate, pull, and start
+## 3. Start it
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
-  psyb0t/pr0xteus:latest config check --config-dir /config
-docker compose pull
-docker compose up -d
+pr0xteus start
 curl --fail --silent http://127.0.0.1:9091/healthz
 ```
+
+`pr0xteus start` checks the token, bundle, pools, and routing before it pulls
+images or starts anything. `pr0xteus status`, `pr0xteus logs --follow`, and
+`pr0xteus stop` are the normal day-to-day commands.
 
 The controller API is `127.0.0.1:8000`; metrics and health are
 `127.0.0.1:9091`. Cells have no host port and live only on
 `pr0xteus-egress`. `/healthz` says the controller is alive; it does not prove
 that a provider tunnel can be allocated right now.
+
+### Optional: put the API on your tailnet
+
+Keep the loopback listener, then add this to `~/.pr0xteus/.env` and start
+again:
+
+```dotenv
+PR0XTEUS_TAILSCALE_ENABLED=true
+TS_AUTHKEY=your-tailscale-auth-key
+TS_HOSTNAME=pr0xteus
+```
+
+```bash
+pr0xteus start
+```
+
+The optional sidecar gets its own tailnet identity and proxies
+`http://pr0xteus/v1/...` to the controller through Tailscale Serve. It opens
+no host port; the bearer token below is still required. Its identity survives
+restarts in `~/.pr0xteus/tailscale/state`.
 
 ## 4. Allocate one configured exit
 
@@ -99,7 +109,7 @@ Read the token from `.env` without putting it in command history or curl's
 argument list:
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' .env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(
@@ -157,4 +167,4 @@ make lint
 
 `make config-init` and `make run` are development conveniences. They use
 `docker-compose.yml` plus `docker-compose.dev.yml`; production operators use
-the image-first commands above.
+the installer and `pr0xteus` command above.

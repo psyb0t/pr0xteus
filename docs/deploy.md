@@ -1,7 +1,7 @@
 # Deployment guide
 
-Pr0xteus is deployed from `psyb0t/pr0xteus`, not from a source checkout. You
-need Linux, Docker, and its built-in `docker compose` command. The standard
+Pr0xteus runs from `psyb0t/pr0xteus`, not from a source checkout. You need
+Linux, Docker, and WireGuard material you are allowed to use. The standard
 stack keeps API and metrics loopback-only, confines raw Docker access to the
 socket proxy, and keeps WireGuard material plus the bearer token outside Git
 and image layers.
@@ -10,45 +10,86 @@ For the exact working configuration, use
 [complete-example.md](complete-example.md). For controller/cell internals, see
 [internal/README.md](../internal/README.md) and [cell/README.md](../cell/README.md).
 
-## Bootstrap the host directory
+## Install it
 
 ```bash
-mkdir pr0xteus && cd pr0xteus
-curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
-  psyb0t/pr0xteus:latest config init \
-  --config-dir /config --host-config-dir "$PWD"
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-`config init` preserves existing configuration. It creates `.env`, the pools
-and routing skeletons, and empty `secrets/wireguard/`; it never manufactures a
-provider configuration. The random bearer token is written directly to the
-ignored, owner-only `.env` as `PR0XTEUS_API_TOKEN`.
+The installer creates `~/.pr0xteus/`, writes the local `docker-compose.yml`,
+and adds the `pr0xteus` command. It preserves config on a later run. It creates
+`.env`, pool and routing skeletons, and empty `secrets/wireguard/`; it never
+manufactures a provider configuration. The random bearer token is written
+directly to owner-only `~/.pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
 
-Add real `*.conf` files under `secrets/wireguard/`, then change
-`secrets/pools.yaml` and `config/egress-routing.yaml` to reference their
-basenames. The controller needs the same absolute host configuration path that
-Docker sees because it asks Docker to bind a selected file into each cell.
+Add real `*.conf` files under `~/.pr0xteus/secrets/wireguard/`, then change
+`~/.pr0xteus/secrets/pools.yaml` and
+`~/.pr0xteus/config/egress-routing.yaml` to reference their basenames. The
+installer handles the absolute host path Docker needs when it binds one chosen
+file into each cell.
 
 ## Pull and start a release
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
-  psyb0t/pr0xteus:latest config check --config-dir /config
-docker compose pull
-docker compose up -d
+pr0xteus start
 ```
 
+`pr0xteus start` validates local config before it pulls or starts containers.
 `latest` uses its baked-in `cell-latest` image. A versioned controller uses its
-matching versioned cell. If you bootstrap a versioned controller, pass that
-same tag to both the `docker run` image and `--controller-image`; no cell
-override is normally needed. A deliberate `PR0XTEUS_CELL_IMAGE` override must
-be a released digest and leave `PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false`.
+matching versioned cell. To pin a controller release, set
+`PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in
+`~/.pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. A deliberate
+`PR0XTEUS_CELL_IMAGE` override must be a released digest and leave
+`PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false`.
+
+## Tailscale sidecar
+
+The controller and metrics listeners stay on host loopback. To reach the
+authenticated controller API from your tailnet, add this to the owner-only
+`~/.pr0xteus/.env`:
+
+```dotenv
+PR0XTEUS_TAILSCALE_ENABLED=true
+TS_AUTHKEY=your-tailscale-auth-key
+TS_HOSTNAME=pr0xteus
+TS_EXTRA_ARGS=--accept-dns=false
+```
+
+`pr0xteus start` enables the Compose `tailscale` profile, gives the sidecar its
+own tailnet identity, and wires Tailscale Serve to `http://pr0xteus:8000` over
+the private Docker control network. The tailnet URL is
+`http://pr0xteus/v1/...` when MagicDNS names the node `pr0xteus`. Tailscale
+encrypts that path; the bearer token is still required for API calls.
+
+For a direct Compose deployment, use the same generated config and wire Serve
+after the sidecar has joined:
+
+```bash
+docker compose --profile tailscale \
+  --project-directory "$HOME/.pr0xteus" \
+  --env-file "$HOME/.pr0xteus/.env" \
+  -f "$HOME/.pr0xteus/docker-compose.yml" \
+  up --detach --pull always
+
+docker compose --profile tailscale \
+  --project-directory "$HOME/.pr0xteus" \
+  --env-file "$HOME/.pr0xteus/.env" \
+  -f "$HOME/.pr0xteus/docker-compose.yml" \
+  exec -T tailscale tailscale serve --bg --http=80 http://pr0xteus:8000
+```
+
+The sidecar never publishes a host port and does not reuse a Tailscale client
+running on the host. Its persistent state is
+`~/.pr0xteus/tailscale/state`, so restarts retain the sidecar identity and do
+not consume the auth key again. For Headscale, set
+`TS_EXTRA_ARGS=--accept-dns=false --login-server=https://headscale.example`.
+The sidecar needs `/dev/net/tun`, `NET_ADMIN`, and `NET_RAW` to create its own
+kernel-mode tunnel; no other Pr0xteus service receives those privileges.
 
 ## Verify without leaking the bearer token
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' .env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
 curl --fail-with-body \
   --header @<(printf 'Authorization: Bearer %s' "$token") \
   --header 'Content-Type: application/json' \
@@ -64,14 +105,14 @@ controller API beyond an authenticated private boundary.
 ## Operations
 
 ```bash
-docker compose ps
-docker compose logs --tail=200 pr0xteus
-docker compose pull
-docker compose up -d
+pr0xteus status
+pr0xteus logs --tail=200
+pr0xteus upgrade
+pr0xteus start
 ```
 
 The controller and socket proxy use capped JSON logs. For configuration or
-provider changes, run `config check` first, then use `docker compose up -d`.
+provider changes, run `pr0xteus start`; it checks config before starting.
 
 Source checkout is development-only. Its Makefile runs format, lint, and all
 tests in the development container; it is not required to operate the image.

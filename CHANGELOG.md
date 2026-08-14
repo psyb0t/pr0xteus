@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.1 — 2026-08-14
+
+- The installer now pins the local stack to the latest tagged release instead of
+  `:latest`, writing that exact tag into `~/.pr0xteus/.env`; the controller
+  derives its matching `cell-<tag>` image, so both move only on an explicit
+  upgrade. Pass `--rolling` to the installer or to `start` / `upgrade` to use the
+  moving `:latest` image for a single run.
+- Added `pr0xteus upgrade` (re-pin to the newest release, pull it, drop the
+  previous image) and `pr0xteus uninstall` (stop the stack, remove the command,
+  and delete `~/.pr0xteus` and its volumes only after a prompt). Installer and
+  wrapper output is now plain human-readable progress rather than JSON log lines.
+- Ignored `.backup` and `scripts/.post-update-temp` so a Servicepack update's
+  backup archive and scratch directory can never be committed.
+
 ## v0.2.0 — 2026-08-14
 
 - Made the published Docker image the operator path: `pr0xteus config init`

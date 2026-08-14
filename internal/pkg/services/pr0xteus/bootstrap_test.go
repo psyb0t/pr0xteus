@@ -19,7 +19,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 		ControllerImage: defaultControllerImage,
 	})
 	require.NoError(t, err)
-	assert.Len(t, result.Created, 3)
+	assert.Len(t, result.Created, 4)
 	assert.Empty(t, result.Preserved)
 
 	envPath := filepath.Join(configDir, dotEnvFileName)
@@ -27,6 +27,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	require.NoError(t, err)
 	assert.Contains(t, string(env), apiTokenEnvName+"=")
 	assert.Contains(t, string(env), "PR0XTEUS_CONTROLLER_IMAGE="+defaultControllerImage)
+	assert.Contains(t, string(env), "PR0XTEUS_TAILSCALE_ENABLED=false")
 	assert.NotContains(t, string(env), "API_TOKEN_FILE")
 
 	info, err := os.Stat(envPath)
@@ -35,10 +36,17 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 
 	poolPath := filepath.Join(configDir, poolsRelativePath)
 	routingPath := filepath.Join(configDir, routingRelativePath)
+	composePath := filepath.Join(configDir, composeFileName)
 	poolBefore, err := os.ReadFile(poolPath)
 	require.NoError(t, err)
 	routingBefore, err := os.ReadFile(routingPath)
 	require.NoError(t, err)
+	composeBefore, err := os.ReadFile(composePath)
+	require.NoError(t, err)
+	assert.Contains(t, string(composeBefore), "name: pr0xteus")
+	assert.Contains(t, string(composeBefore), "docker-socket-proxy")
+	assert.Contains(t, string(composeBefore), "tailscale/tailscale")
+	require.DirExists(t, filepath.Join(configDir, tailscaleStatePath))
 
 	secondResult, err := BootstrapConfig(BootstrapOptions{
 		ConfigDir:       configDir,
@@ -47,9 +55,10 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	})
 	require.NoError(t, err)
 	assert.Empty(t, secondResult.Created)
-	assert.Len(t, secondResult.Preserved, 3)
+	assert.Len(t, secondResult.Preserved, 4)
 	assert.Equal(t, poolBefore, readBootstrapFixture(t, poolPath))
 	assert.Equal(t, routingBefore, readBootstrapFixture(t, routingPath))
+	assert.Equal(t, composeBefore, readBootstrapFixture(t, composePath))
 	assert.Equal(t, env, readBootstrapFixture(t, envPath))
 }
 

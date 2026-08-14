@@ -5,6 +5,7 @@
 [![coverage](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/coverage.svg)](https://github.com/psyb0t/gonfiguration/actions/workflows/pipeline.yml)
 [![version](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/version.svg)](https://github.com/psyb0t/gonfiguration/tags)
 [![license](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/license.svg)](LICENSE)
+[![imported by](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/importers.svg)](https://github.com/psyb0t/gonfiguration/blob/badges/importers.md)
 
 A no-bullshit, thread-safe configuration library for Go that doesn't make you wanna punch your monitor. Tired of writing the same boring-ass env var parsing shit over and over? This badass package's got your back with reflection magic that actually works without making you cry.
 
@@ -88,7 +89,9 @@ func main() {
 }
 ```
 
-## Complete API Reference
+## API Reference
+
+Functions below; the sentinel errors are listed in [Error Handling](#error-handling-when-shit-goes-wrong).
 
 ### Core Functions
 

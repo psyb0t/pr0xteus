@@ -36,13 +36,13 @@ DEV_RUN_DIND_INTEGRATION := docker run --rm --init \
 .PHONY: test-real coverage-report docker-build build-cell run config-init config-check audit-compose
 
 format: dev-image ## Format Go and shell source in the development container
-	@$(DEV_RUN) bash -ceu 'go tool gofumpt -w .; shfmt -w $$(find cell scripts -type f -name "*.sh")'
+	@$(DEV_RUN) bash -ceu 'go tool gofumpt -w .; shfmt -w install.sh $$(find cell scripts -type f -name "*.sh")'
 
 lint: dev-image ## Run Go, shell, and Compose static checks in the development container
-	@$(DEV_RUN) bash -ceu 'out=$$(go fix -diff ./... 2>&1) || true; test -z "$$out" || { printf "%s\\n" "$$out" >&2; exit 1; }; go tool golangci-lint run --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shellcheck -x -P scripts/make/servicepack $$shell_files; shfmt -d $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
+	@$(DEV_RUN) bash -ceu 'out=$$(go fix -diff ./... 2>&1) || true; test -z "$$out" || { printf "%s\\n" "$$out" >&2; exit 1; }; go tool golangci-lint run --timeout=30m0s ./...; shell_files="install.sh $$(find cell scripts -type f -name "*.sh" -print)"; shellcheck -x -P scripts/make/servicepack $$shell_files; shfmt -d $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
 
 lint-fix: dev-image ## Apply safe Go and shell fixes in the development container
-	@$(DEV_RUN) bash -ceu 'go fix ./...; go tool golangci-lint run --fix --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shfmt -w $$shell_files; shellcheck -x -P scripts/make/servicepack $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
+	@$(DEV_RUN) bash -ceu 'go fix ./...; go tool golangci-lint run --fix --timeout=30m0s ./...; shell_files="install.sh $$(find cell scripts -type f -name "*.sh" -print)"; shfmt -w $$shell_files; shellcheck -x -P scripts/make/servicepack $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
 
 test: test-unit test-integration ## Run unit and Testcontainers integration suites
 	@:
