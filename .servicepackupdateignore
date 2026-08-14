@@ -20,6 +20,10 @@
 cmd/init.go
 cmd/commands.go
 
+# pr0xteus adds service-specific exclusions and formatter policy on top of the
+# framework baseline; keep that local contract across framework updates.
+.golangci.yml
+
 # Dependabot config - your own dependency policy (which deps, the cooldown
 # window, the own-package excludes). Ignored by default so a framework update
 # never clobbers your tweaks. Delete this line if you'd rather the framework

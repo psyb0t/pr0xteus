@@ -8,7 +8,8 @@ should rely on `internal` types.
 
 ```text
 api.go       request authentication, strict JSON, transport errors
-config.go    environment and token-file validation
+config.go    environment and bearer-token validation
+bootstrap.go image CLI configuration bootstrap and validation
 routing.go   country-to-pool policy parsing
 pool.go      pool state, acquire/release, failure cache, projections
 spawner.go   constrained Docker cell lifecycle
@@ -67,7 +68,7 @@ read-only config bind, and required network sysctls. It does not receive the
 Docker socket or a caller-controlled environment.
 
 The controller itself reaches a Docker socket proxy rather than a mounted raw
-socket. `compose.yaml` must keep both the proxy's permission allow-list and
+socket. `docker-compose.yml` must keep both the proxy's permission allow-list and
 the controller's network topology in sync with the Docker calls in
 `spawner.go`.
 

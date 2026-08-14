@@ -1,50 +1,61 @@
-# Complete local setup and a real SOCKS5 proof
+# Complete image-first setup and a real SOCKS5 proof
 
-This is the no-mystery route from a fresh clone to a working **private**
-WireGuard-backed SOCKS5 cell. You need Linux, Docker Engine, Docker Compose
-v2, Make, and a WireGuard configuration you are authorized to use. pr0xteus
-does not create a VPN account or fetch provider configs for you.
+This is the operator path: pull the published image, generate only ignored
+local configuration, start it with `docker compose`, then allocate one private
+WireGuard-backed SOCKS5 exit. You need Linux, Docker with the built-in `docker
+compose` command, and WireGuard material you are authorized to use. pr0xteus
+does not create a VPN account or fetch provider configuration for you.
 
-The controller is local policy plus cell lifecycle. Your service requests a
-country or a named pool; it never gets to choose an image, a Docker mount, or
-a WireGuard file.
-
-For why the pieces are separated this way, see
-[architecture.md](architecture.md). For the HTTP contract, see
-[api.md](api.md). The code-level controller and cell detail live in
-[internal/README.md](../internal/README.md) and
+For component detail, see [architecture.md](architecture.md),
+[api.md](api.md), [internal/README.md](../internal/README.md), and
 [cell/README.md](../cell/README.md).
 
-## 1. Create only local, ignored config
+## 1. Create the local deployment directory
 
 ```bash
-git clone https://github.com/psyb0t/pr0xteus.git
-cd pr0xteus
-make config-init
+mkdir pr0xteus && cd pr0xteus
+curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
+  psyb0t/pr0xteus:latest config init \
+  --config-dir /config --host-config-dir "$PWD"
 ```
 
-On a fresh checkout that creates these ignored local files:
+The initializer is non-destructive. It creates these local, ignored files only
+when missing:
 
 ```text
-secrets/wireguard/           your real *.conf files go here
-secrets/pools.yaml           the approved logical pools
+secrets/wireguard/           put real *.conf files here
+secrets/pools.yaml           approved logical pools
 config/egress-routing.yaml   requested country -> pool mapping
-secrets/pr0xteus_api_token   generated bearer token
-.env                         absolute host paths plus image choice
+.env                         bearer token, host path, image and ports
 ```
 
-It does not create a usable VPN config. Put a real config file in the bundle.
-For this example, use:
+`.env` is mode `0600`; it contains `PR0XTEUS_API_TOKEN`. Keep it local. There
+is no separate Compose `secrets/` token file.
+
+To deploy a fixed controller release, replace `latest` consistently:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
+  psyb0t/pr0xteus:vX.Y.Z config init \
+  --config-dir /config --host-config-dir "$PWD" \
+  --controller-image psyb0t/pr0xteus:vX.Y.Z
+```
+
+The controller carries its matching cell reference: `latest` carries
+`cell-latest`; `vX.Y.Z` carries `cell-vX.Y.Z`. Do not set a cell override
+unless you need one; if you do, it must include an immutable digest.
+
+## 2. Add a real WireGuard file and policy
+
+Put a provider or private-network file at:
 
 ```text
 secrets/wireguard/us-example.conf
 ```
 
-The pool config name is the filename without `.conf`: `us-example`.
-
-## 2. Make the local policy match the file
-
-Replace the skeleton in `secrets/pools.yaml` with:
+The name used in the pool is the filename without `.conf`. Replace the pool
+skeleton with:
 
 ```yaml
 pools:
@@ -56,7 +67,7 @@ pools:
       us-example: US
 ```
 
-Then set the country route in `config/egress-routing.yaml`:
+Set the requested-country policy in `config/egress-routing.yaml`:
 
 ```yaml
 country_to_pool:
@@ -64,68 +75,31 @@ country_to_pool:
 default_pool: us
 ```
 
-`exit_countries` matters when a provider filename does not say what country it
-exits from. It wins over the old `<country>-<location>.conf` filename guess.
+`exit_countries` is required for filenames that do not communicate their exit
+country. It beats the old filename guess.
 
-## 3. Check the host path and image
-
-`make config-init` writes an `.env` for local development:
-
-```dotenv
-PR0XTEUS_CELL_IMAGE=psyb0t/pr0xteus:cell-dev
-PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=true
-PR0XTEUS_BUNDLE_DIR=/absolute/path/to/pr0xteus/secrets/wireguard
-PR0XTEUS_POOLS_FILE=/absolute/path/to/pr0xteus/secrets/pools.yaml
-PR0XTEUS_ROUTING_FILE=/absolute/path/to/pr0xteus/config/egress-routing.yaml
-PR0XTEUS_API_TOKEN_FILE=/absolute/path/to/pr0xteus/secrets/pr0xteus_api_token
-```
-
-If an older local `.env` says `psyb0t/pr0xteus-cell:dev`, change that image
-value to `psyb0t/pr0xteus:cell-dev`. `make config-init` preserves an existing
-file and only warns about the stale value.
-
-Those paths are deliberately absolute. The controller asks Docker to mount the
-selected WireGuard file into a cell, so it must see the bundle at the same
-absolute host path Docker sees. A container-only path will not work.
-
-For a deployed stack, omit `PR0XTEUS_CELL_IMAGE` to use the matching cell
-already baked into the controller release (`latest` -> `cell-latest`; `vX.Y.Z`
--> `cell-vX.Y.Z`). To deliberately override that pairing, use a released tag
-with its digest and disable the local escape hatch:
-
-```dotenv
-PR0XTEUS_CELL_IMAGE=psyb0t/pr0xteus:cell-vX.Y.Z@sha256:REPLACE_WITH_PUBLISHED_DIGEST
-PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false
-```
-
-Do not put the token, any WireGuard file, or either version of `.env` in Git.
-
-## 4. Validate and start
+## 3. Validate, pull, and start
 
 ```bash
-make build-cell
-make config-check
-make run
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
+  psyb0t/pr0xteus:latest config check --config-dir /config
+docker compose pull
+docker compose up -d
 curl --fail --silent http://127.0.0.1:9091/healthz
 ```
 
-`make run` rebuilds and starts the persistent Compose stack. It exposes:
+The controller API is `127.0.0.1:8000`; metrics and health are
+`127.0.0.1:9091`. Cells have no host port and live only on
+`pr0xteus-egress`. `/healthz` says the controller is alive; it does not prove
+that a provider tunnel can be allocated right now.
 
-| Listener | Default | Who can use it |
-|---|---|---|
-| Control API | `127.0.0.1:8000` | Bearer-token holders |
-| Health and metrics | `127.0.0.1:9091` | Local monitoring and ops |
-| SOCKS5 cells | no host port | Containers on `pr0xteus-egress` |
+## 4. Allocate one configured exit
 
-`/healthz` proves that the metrics listener is up. It does not promise the
-provider is reachable or that a cell can be allocated right now.
-
-## 5. Allocate one configured exit
-
-Read the token without putting it in shell history or a process argument:
+Read the token from `.env` without putting it in command history or curl's
+argument list:
 
 ```bash
-token="$(<secrets/pr0xteus_api_token)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' .env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(
@@ -135,7 +109,6 @@ allocation="$(
     --data '{"country":"US"}' \
     http://127.0.0.1:8000/v1/proxies
 )"
-
 proxy_url="$(jq -er '.url' <<<"$allocation")"
 jq '{pool, exitCountry, url}' <<<"$allocation"
 ```
@@ -150,12 +123,9 @@ The response has this shape:
 }
 ```
 
-The hostname is private Docker-network plumbing. It is supposed to fail from
-your host shell.
+That URL is Docker-network plumbing and is meant to fail from the host shell.
 
-## 6. Prove traffic uses the private SOCKS5 cell
-
-Run a disposable consumer on the egress network:
+## 5. Prove traffic uses the private SOCKS5 cell
 
 ```bash
 docker run --rm --network pr0xteus-egress \
@@ -168,43 +138,23 @@ unset token proxy_url allocation
 unset -a auth_header
 ```
 
-That prints the public address seen through the allocated exit. Use the
-provider and target you are authorized to use; the IP-echo endpoint is a
-simple smoke check, not a pr0xteus dependency.
+That prints the public address seen through the allocated exit. Use only
+providers and targets you are authorized to use; the IP endpoint is a smoke
+check, not a pr0xteus dependency.
 
-## 7. Inspect and replace assignments
+## Source development
+
+Cloning the repository is only for changing Pr0xteus itself. The Makefile puts
+formatting, linting, unit tests, Testcontainers integration tests, and local
+image builds inside the development container:
 
 ```bash
-export PR0XTEUS_URL=http://127.0.0.1:8000
-export PR0XTEUS_API_TOKEN=read-it-from-your-secret-store
-auth_header=(--header @<(printf 'Authorization: Bearer %s' "$PR0XTEUS_API_TOKEN"))
-
-# Pools, hot tunnel state, and recent failures.
-curl --fail-with-body "${auth_header[@]}" "$PR0XTEUS_URL/v1/pools" | jq .
-
-# A caller that had a broken proxy asks for a different one.
-curl --fail-with-body "${auth_header[@]}" \
-  --header 'Content-Type: application/json' \
-  --data '{"country":"US","excludeProxy":"socks5://old-private-cell:1080"}' \
-  "$PR0XTEUS_URL/v1/proxies"
+git clone https://github.com/psyb0t/pr0xteus.git
+cd pr0xteus
+make test
+make lint
 ```
 
-There is no explicit release endpoint. The controller tracks the API
-assignment, not the lifetime of every SOCKS5 session. A healthy cell stays warm
-until the idle reaper decides it is done.
-
-## What to run when
-
-| Need | Command |
-|---|---|
-| Make missing local skeletons | `make config-init` |
-| Validate Compose interpolation | `make config-check` |
-| Start persistent local services | `make run` |
-| Run unit plus real isolated WireGuard/SOCKS5 tests | `make test` |
-| Run the ignored local Surfshark smoke | `make test-real` |
-| Run every test package and enforce 90% production coverage | `make test-coverage` |
-| Check Go vulnerabilities / Compose hardening | `make audit` / `make audit-compose` |
-
-All lint and test targets run their tooling inside the repository development
-container. The normal integration suite creates its own Docker resources via
-Testcontainers; it does not reuse or need this persistent Compose stack.
+`make config-init` and `make run` are development conveniences. They use
+`docker-compose.yml` plus `docker-compose.dev.yml`; production operators use
+the image-first commands above.

@@ -1,0 +1,6 @@
+# Point each requested ISO 3166-1 alpha-2 country code at a pool from
+# secrets/pools.yaml. The image creates this only when no operator-owned
+# routing policy exists yet.
+country_to_pool:
+  US: primary
+default_pool: primary

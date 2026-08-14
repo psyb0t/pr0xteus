@@ -2,7 +2,6 @@ package pr0xteus
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"time"
 
@@ -71,9 +70,9 @@ type Config struct {
 	// the restricted socket proxy, never the raw Docker socket.
 	DockerHost string `default:"" env:"PR0XTEUS_DOCKER_HOST"`
 
-	// APITokenFile contains the private bearer token that protects the control
-	// API. The standard Compose setup mounts it as a Docker secret.
-	APITokenFile string `default:"/run/secrets/pr0xteus_api_token" env:"PR0XTEUS_API_TOKEN_FILE"` //nolint:lll // struct tag can't wrap
+	// APIToken protects the private control API. The standard deployment keeps
+	// it in the ignored .env beside the Compose file.
+	APIToken string `env:"PR0XTEUS_API_TOKEN,required"`
 
 	// AllowUnpinnedCellImage is a local-development escape hatch. Production
 	// must use an immutable image digest.
@@ -106,10 +105,8 @@ func LoadConfig() (Config, error) {
 		)
 	}
 
-	if strings.TrimSpace(cfg.APITokenFile) == "" {
-		return Config{}, ctxerrors.Wrap(
-			ErrConfigInvalid, "PR0XTEUS_API_TOKEN_FILE required",
-		)
+	if _, err := ValidateAPIToken(cfg.APIToken); err != nil {
+		return Config{}, ctxerrors.Wrap(err, "validate PR0XTEUS_API_TOKEN")
 	}
 
 	if strings.TrimSpace(cfg.ManagedScope) == "" {
@@ -138,27 +135,17 @@ func (cfg *Config) resolveCellImage() (bool, error) {
 	)
 }
 
-// LoadAPIToken reads the mounted bearer token without ever logging its value.
-func LoadAPIToken(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, ctxerrors.Wrap(err, "stat API token file")
-	}
-
-	if info.Size() > maxAPITokenBytes {
+// ValidateAPIToken validates the private bearer token without logging it.
+func ValidateAPIToken(raw string) ([]byte, error) {
+	token := bytes.Clone(bytes.TrimSpace([]byte(raw)))
+	if len(token) > maxAPITokenBytes {
 		return nil, ctxerrors.Wrap(
-			ErrConfigInvalid, "API token file exceeds 4096 bytes",
+			ErrConfigInvalid, "API token exceeds 4096 bytes",
 		)
 	}
 
-	token, err := os.ReadFile(path)
-	if err != nil {
-		return nil, ctxerrors.Wrap(err, "read API token file")
-	}
-
-	token = bytes.Clone(bytes.TrimSpace(token))
 	if len(token) == 0 {
-		return nil, ctxerrors.Wrap(ErrConfigInvalid, "API token file is empty")
+		return nil, ctxerrors.Wrap(ErrConfigInvalid, "API token is empty")
 	}
 
 	return token, nil

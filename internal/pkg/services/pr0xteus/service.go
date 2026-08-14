@@ -48,9 +48,9 @@ func New() (*Service, error) {
 		return nil, ctxerrors.Wrap(err, "load pr0xteus config")
 	}
 
-	apiToken, err := LoadAPIToken(cfg.APITokenFile)
+	apiToken, err := ValidateAPIToken(cfg.APIToken)
 	if err != nil {
-		return nil, ctxerrors.Wrap(err, "load API token")
+		return nil, ctxerrors.Wrap(err, "validate API token")
 	}
 
 	specs, known, err := LoadPoolSpecs(cfg.PoolsFile, cfg.BundleDir)

@@ -39,10 +39,10 @@ format: dev-image ## Format Go and shell source in the development container
 	@$(DEV_RUN) bash -ceu 'go tool gofumpt -w .; shfmt -w $$(find cell scripts -type f -name "*.sh")'
 
 lint: dev-image ## Run Go, shell, and Compose static checks in the development container
-	@$(DEV_RUN) bash -ceu 'out=$$(go fix -diff ./... 2>&1) || true; test -z "$$out" || { printf "%s\\n" "$$out" >&2; exit 1; }; go tool golangci-lint run --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shellcheck -x -P scripts/make/servicepack $$shell_files; shfmt -d $$shell_files; bash scripts/audit-compose.sh compose.yaml'
+	@$(DEV_RUN) bash -ceu 'out=$$(go fix -diff ./... 2>&1) || true; test -z "$$out" || { printf "%s\\n" "$$out" >&2; exit 1; }; go tool golangci-lint run --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shellcheck -x -P scripts/make/servicepack $$shell_files; shfmt -d $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
 
 lint-fix: dev-image ## Apply safe Go and shell fixes in the development container
-	@$(DEV_RUN) bash -ceu 'go fix ./...; go tool golangci-lint run --fix --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shfmt -w $$shell_files; shellcheck -x -P scripts/make/servicepack $$shell_files; bash scripts/audit-compose.sh compose.yaml'
+	@$(DEV_RUN) bash -ceu 'go fix ./...; go tool golangci-lint run --fix --timeout=30m0s ./...; shell_files=$$(find cell scripts -type f -name "*.sh" -print); shfmt -w $$shell_files; shellcheck -x -P scripts/make/servicepack $$shell_files; bash scripts/audit-compose.sh docker-compose.yml'
 
 test: test-unit test-integration ## Run unit and Testcontainers integration suites
 	@:
@@ -68,14 +68,22 @@ docker-build: ## Build the hardened production image with build identity
 build-cell: dev-image ## Build the WireGuard plus SOCKS5 cell image through the development container
 	@PR0XTEUS_CELL_TAG=$(CELL_IMAGE_NAME):$(CELL_TAG_PREFIX)$(TAG) $(DEV_RUN_DIND) bash scripts/build_cell.sh
 
-run: docker-build build-cell ## Rebuild and start the private Compose stack
-	@$(DEV_RUN_DIND) docker compose up -d --build
+run: config-check docker-build build-cell ## Rebuild and start the private development stack
+	@$(DEV_RUN_DIND) docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-config-init: dev-image ## Create ignored local development configuration without overwriting it
-	@$(DEV_RUN) bash scripts/config-init.sh
+config-init: docker-build ## Create ignored development configuration without overwriting it
+	@docker run --rm --user $(UID):$(GID) \
+		-v "$(CURDIR):/config" \
+		$(IMAGE_NAME):$(TAG) config init \
+		--config-dir /config \
+		--host-config-dir "$(CURDIR)" \
+		--development
 
-config-check: dev-image ## Validate Compose interpolation and local configuration shape
-	@$(DEV_RUN) docker compose config --quiet
+config-check: docker-build dev-image ## Validate local config and production Compose interpolation
+	@docker run --rm --user $(UID):$(GID) \
+		-v "$(CURDIR):/config:ro" \
+		$(IMAGE_NAME):$(TAG) config check --config-dir /config
+	@$(DEV_RUN) docker compose -f docker-compose.yml config --quiet
 
 audit-compose: dev-image ## Reject unsafe Compose settings in the development container
-	@$(DEV_RUN) bash scripts/audit-compose.sh compose.yaml
+	@$(DEV_RUN) bash scripts/audit-compose.sh docker-compose.yml

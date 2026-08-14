@@ -55,11 +55,7 @@ services:
         max-file: "5"
 
   pr0xteus:
-    build:
-      context: .
-    image: psyb0t/pr0xteus:dev
-    env_file:
-      - .env
+    image: ${PR0XTEUS_CONTROLLER_IMAGE:?run pr0xteus config init first}
     init: true
     restart: unless-stopped
     read_only: true
@@ -81,18 +77,17 @@ services:
       docker-socket-proxy:
         condition: service_healthy
     environment:
+      PR0XTEUS_API_TOKEN: ${PR0XTEUS_API_TOKEN:?run pr0xteus config init first}
+      PR0XTEUS_CELL_IMAGE: ${PR0XTEUS_CELL_IMAGE:-}
+      PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE: ${PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE:-false}
       PR0XTEUS_CELL_NETWORK: pr0xteus-egress
-
-      # Scope orphan reconciliation to this Compose controller; never let one
-      # independent controller reap another one's cells on the same daemon.
       PR0XTEUS_MANAGED_SCOPE: pr0xteus-compose
       PR0XTEUS_DOCKER_HOST: tcp://docker-socket-proxy:2375
       TUNNEL_POOL_LISTEN_ADDR: 0.0.0.0:8000
       TUNNEL_POOL_METRICS_ADDR: 0.0.0.0:9091
-      TUNNEL_POOL_BUNDLE_DIR: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
-      TUNNEL_POOL_POOLS_FILE: /run/pr0xteus/pools.yaml
-      TUNNEL_POOL_ROUTING_FILE: /run/pr0xteus/routing.yaml
-      PR0XTEUS_API_TOKEN_FILE: /run/secrets/pr0xteus_api_token
+      TUNNEL_POOL_BUNDLE_DIR: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus config init first}/secrets/wireguard
+      TUNNEL_POOL_POOLS_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus config init first}/secrets/pools.yaml
+      TUNNEL_POOL_ROUTING_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus config init first}/config/egress-routing.yaml
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_ADD_SOURCE: ${LOG_ADD_SOURCE:-true}
@@ -101,27 +96,11 @@ services:
       - "127.0.0.1:${PR0XTEUS_METRICS_PORT:-9091}:9091"
     volumes:
       - type: bind
-        source: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
-        target: ${PR0XTEUS_BUNDLE_DIR:?set an absolute host bundle path in .env}
+        source: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus config init first}
+        target: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus config init first}
         read_only: true
-      - type: bind
-        source: ${PR0XTEUS_POOLS_FILE:?set the pool file path in .env}
-        target: /run/pr0xteus/pools.yaml
-        read_only: true
-      - type: bind
-        source: ${PR0XTEUS_ROUTING_FILE:?set the routing file path in .env}
-        target: /run/pr0xteus/routing.yaml
-        read_only: true
-    secrets:
-      - source: pr0xteus_api_token
-        target: pr0xteus_api_token
-        uid: "1500"
-        gid: "1500"
-        mode: 0400
     networks:
       - control
-      # The controller joins this network only to probe each cell's private
-      # SOCKS5 listener. Its host-published control API stays loopback-bound.
       - egress
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/healthz | grep -qx 'ok'"]
@@ -139,13 +118,5 @@ networks:
   control:
     internal: true
     name: pr0xteus-control
-  # Cells must reach their WireGuard endpoints, so this network cannot be
-  # internal. The controller joins only to check each cell's private SOCKS5
-  # listener; the cell kill-switch allows only WireGuard endpoint traffic
-  # before the tunnel comes up.
   egress:
     name: pr0xteus-egress
-
-secrets:
-  pr0xteus_api_token:
-    file: ${PR0XTEUS_API_TOKEN_FILE:?set the API token file path in .env}

@@ -33,13 +33,10 @@ func TestNew_WiresAValidatedServiceFromOperatorFiles(t *testing.T) {
   DE: western
 default_pool: western
 `)
-	tokenPath := filepath.Join(dir, "api-token")
-	writeRuntimeFixture(t, tokenPath, "test-only-token\n")
-
 	t.Setenv("TUNNEL_POOL_POOLS_FILE", poolsPath)
 	t.Setenv("TUNNEL_POOL_BUNDLE_DIR", bundleDir)
 	t.Setenv("TUNNEL_POOL_ROUTING_FILE", routingPath)
-	t.Setenv("PR0XTEUS_API_TOKEN_FILE", tokenPath)
+	t.Setenv("PR0XTEUS_API_TOKEN", "test-only-token")
 
 	service, err := New()
 	require.NoError(t, err)

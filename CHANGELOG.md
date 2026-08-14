@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.0 — 2026-08-14
+
+- Made the published Docker image the operator path: `pr0xteus config init`
+  creates the ignored local skeleton and `pr0xteus config check` validates it;
+  `docker-compose.yml` starts the released controller and matching cell image.
+- **Breaking.** Replaced `PR0XTEUS_API_TOKEN_FILE` and Docker Compose secrets
+  with the required `PR0XTEUS_API_TOKEN` in the owner-only, ignored `.env`.
+  Run `pr0xteus config init` in the deployment directory, then keep the
+  generated token in that `.env`.
+- Kept source checkout and Makefile commands development-only, and preserved
+  pr0xteus's custom `.golangci.yml` during future Servicepack updates.
+
 ## v0.1.2 — 2026-08-14
 
 - Fixed vendoring so Go can resolve Moby's `api/types/build` package and

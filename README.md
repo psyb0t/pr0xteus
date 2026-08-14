@@ -43,29 +43,33 @@ an image, a host path, or a provider config.
 
 ## Quick start
 
-You need Linux, Docker Engine, Docker Compose v2, Make, and a real WireGuard
-configuration bundle from a provider or network you are authorized to use.
+You need Linux, Docker with the built-in `docker compose` command, and a real
+WireGuard configuration bundle from a provider or network you are authorized to use.
 
 ```bash
-git clone https://github.com/psyb0t/pr0xteus.git
-cd pr0xteus
-make config-init
+mkdir pr0xteus && cd pr0xteus
+curl -fsSLO https://raw.githubusercontent.com/psyb0t/pr0xteus/main/docker-compose.yml
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
+  psyb0t/pr0xteus:latest config init \
+  --config-dir /config --host-config-dir "$PWD"
 ```
 
-`config-init` preserves existing local configuration. On a new checkout it
-puts editable ignored skeletons at `secrets/pools.yaml` and
-`config/egress-routing.yaml`, creates an ignored token and `.env`, and tells
-you where to put your `*.conf` files.
+That pulls no source code. It creates the ignored `.env`, puts an editable
+pool skeleton at `secrets/pools.yaml`, and writes routing policy at
+`config/egress-routing.yaml`. The generated bearer token stays in `.env` with
+owner-only permissions; it is not a Compose secret file.
 
 Put real WireGuard files under `secrets/wireguard/`, replace `example-node` in
-`secrets/pools.yaml` with their basenames, then run:
+`secrets/pools.yaml` with their basenames, then validate and start it:
 
 ```bash
-make config-check
-make run
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config:ro" \
+  psyb0t/pr0xteus:latest config check --config-dir /config
+docker compose pull
+docker compose up -d
 ```
 
-`make run` starts persistent Compose services. The controller is then private
+The controller is then private
 on `http://127.0.0.1:8000`; metrics and health live on
 `http://127.0.0.1:9091`. The
 [complete example](docs/complete-example.md) shows the exact config, a real
@@ -107,8 +111,7 @@ from Docker build contexts:
 - `secrets/wireguard/*.conf` — real WireGuard files.
 - `secrets/pools.yaml` — named pools and their approved config basenames.
 - `config/egress-routing.yaml` — country-to-pool policy.
-- `secrets/pr0xteus_api_token` — private bearer token.
-- `.env` — absolute host paths and image selection.
+- `.env` — the private bearer token, absolute host configuration path, and image selection.
 
 Start from [.env.example](.env.example). A published controller already names
 its matching cell: `latest` uses `cell-latest`, while `vX.Y.Z` uses
@@ -117,10 +120,15 @@ override must be pinned by digest. Local development uses the locally built
 `psyb0t/pr0xteus:cell-dev` with the explicit unpinned escape hatch in the
 generated `.env`.
 
-An existing local `.env` created before this image split still says
-`psyb0t/pr0xteus-cell:dev`; change only that value to
-`psyb0t/pr0xteus:cell-dev`. `make config-init` warns but does not overwrite
-operator-owned configuration.
+For a versioned release, pass the same tag to the initializer so `.env` uses
+that exact controller image:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/config" \
+  psyb0t/pr0xteus:vX.Y.Z config init \
+  --config-dir /config --host-config-dir "$PWD" \
+  --controller-image psyb0t/pr0xteus:vX.Y.Z
+```
 
 Pool filenames need not be provider-specific. For a file that does not follow
 the legacy `<country>-<location>.conf` convention, add its country explicitly:
@@ -191,6 +199,9 @@ API, not an MCP endpoint. The detailed setup reference is
 
 Everything supported goes through Make. Go tooling, formatting, linting, and
 tests run inside `Dockerfile.dev`, not through a host Go installation.
+
+Source checkout and Make are for development only; an operator uses the image
+and `docker compose` quick start above.
 
 ```bash
 make help          # every supported operation
@@ -267,9 +278,8 @@ internal/   — API, pool manager, Docker spawner, reaper, metrics
 pkg/client/ — public Go client for the private control API
 tests/      — Testcontainers-backed controller, WireGuard, cell, and SOCKS5 tests
 cell/       — WireGuard + microSocks worker image and entrypoint
-examples/   — safe templates copied into ignored local configuration
 docs/       — architecture, deployment, and API references
-scripts/    — Makefile-backed setup, dependency, and image helpers
+scripts/    — Makefile-backed dependency and image helpers
 ```
 
 ## More docs

@@ -1,0 +1,4 @@
+services:
+  pr0xteus:
+    build:
+      context: .

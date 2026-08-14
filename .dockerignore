@@ -28,4 +28,4 @@ config/
 .idea/
 git-update.sh
 Dockerfile.dev
-compose.yaml
+docker-compose*.yml

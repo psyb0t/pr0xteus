@@ -290,7 +290,7 @@ func (i *Infra) setupController(ctx context.Context) error {
 	dockerfile := controllerDockerfile
 	env := map[string]string{
 		"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE": "true",
-		"PR0XTEUS_API_TOKEN_FILE":            filepath.Join(i.workDir, "api-token"),
+		"PR0XTEUS_API_TOKEN":                 i.APIToken,
 		"PR0XTEUS_CELL_IMAGE":                cellImage,
 		"PR0XTEUS_CELL_NETWORK":              i.Network.Name,
 		"PR0XTEUS_DOCKER_HOST":               "unix:///var/run/docker.sock",

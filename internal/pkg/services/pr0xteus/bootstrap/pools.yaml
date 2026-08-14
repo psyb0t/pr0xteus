@@ -1,0 +1,11 @@
+# Replace example-node with the basename of a real *.conf file in
+# secrets/wireguard/. The image creates this only when no operator-owned pool
+# policy exists yet.
+pools:
+  primary:
+    region: operator-defined
+    purpose: general-outbound
+    configs:
+      - example-node
+    exit_countries:
+      example-node: US

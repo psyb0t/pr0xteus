@@ -1,9 +1,7 @@
 package pr0xteus
 
 import (
-	"bytes"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/psyb0t/gonfiguration"
@@ -11,37 +9,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadAPIToken(t *testing.T) {
+func TestValidateAPIToken(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name       string
-		contents   []byte
+		raw        string
 		want       string
 		wantErrIs  error
 		wantAnyErr bool
-		create     bool
 	}{
 		{
-			name:     "trims surrounding whitespace",
-			contents: []byte(" \n test-token\t "),
-			want:     "test-token",
-			create:   true,
+			name: "trims surrounding whitespace",
+			raw:  " \n test-token\t ",
+			want: "test-token",
 		},
 		{
 			name:       "empty",
-			contents:   []byte(" \n\t "),
+			raw:        " \n\t ",
 			wantErrIs:  ErrConfigInvalid,
 			wantAnyErr: true,
-			create:     true,
 		},
-		{name: "missing", wantAnyErr: true},
 		{
 			name:       "oversized",
-			contents:   bytes.Repeat([]byte("x"), maxAPITokenBytes+1),
+			raw:        strings.Repeat("x", maxAPITokenBytes+1),
 			wantErrIs:  ErrConfigInvalid,
 			wantAnyErr: true,
-			create:     true,
 		},
 	}
 
@@ -49,12 +42,7 @@ func TestLoadAPIToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			path := filepath.Join(t.TempDir(), "token")
-			if tc.create {
-				require.NoError(t, os.WriteFile(path, tc.contents, 0o600))
-			}
-
-			token, err := LoadAPIToken(path)
+			token, err := ValidateAPIToken(tc.raw)
 			if tc.wantAnyErr {
 				require.Error(t, err)
 				if tc.wantErrIs != nil {
@@ -124,9 +112,9 @@ func TestLoadConfig_Validation(t *testing.T) {
 			wantErr: ErrConfigInvalid,
 		},
 		{
-			name: "requires token file path",
+			name: "requires API token",
 			configure: func(t *testing.T) {
-				t.Setenv("PR0XTEUS_API_TOKEN_FILE", " ")
+				t.Setenv("PR0XTEUS_API_TOKEN", " ")
 			},
 			wantErr: ErrConfigInvalid,
 		},
@@ -170,7 +158,7 @@ func configureValidEnvironment(t *testing.T) {
 	)
 	t.Setenv("PR0XTEUS_BUILT_CELL_IMAGE", "")
 	t.Setenv("PR0XTEUS_CELL_SOCKS_PORT", "1080")
-	t.Setenv("PR0XTEUS_API_TOKEN_FILE", "/tmp/pr0xteus-test-token")
+	t.Setenv("PR0XTEUS_API_TOKEN", "test-only-token")
 	t.Setenv("PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE", "false")
 	t.Setenv("PR0XTEUS_MANAGED_SCOPE", "unit-test")
 }

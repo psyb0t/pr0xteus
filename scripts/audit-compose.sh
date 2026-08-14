@@ -2,8 +2,8 @@
 set -euo pipefail
 
 readonly log_file="${LOG_FILE:-/tmp/pr0xteus-audit-compose.log}"
-readonly compose_file="${1:-compose.yaml}"
-readonly local_development_image='image: psyb0t/pr0xteus:dev'
+readonly compose_file="${1:-docker-compose.yml}"
+readonly controller_image_reference='image: ${PR0XTEUS_CONTROLLER_IMAGE:'
 
 json_escape() {
 	local value="$1"
@@ -96,7 +96,7 @@ if service_has_network docker-socket-proxy egress; then
 fi
 
 while IFS= read -r image_line; do
-	if [[ "$image_line" == *"$local_development_image"* ]]; then
+	if [[ "$image_line" == *"$controller_image_reference"* ]]; then
 		continue
 	fi
 
@@ -114,6 +114,7 @@ require_pattern 'mem_limit:' 'every service needs a memory limit'
 require_pattern 'pids_limit:' 'every service needs a PID limit'
 require_pattern 'max-size:\s*"10m"' 'every service needs capped Docker JSON logs'
 require_pattern 'internal:\s*true' 'control network must remain internal'
-require_pattern 'secrets:' 'controller token must use a Compose secret'
+require_pattern 'PR0XTEUS_API_TOKEN:' 'controller token must come from ignored .env'
+require_pattern 'PR0XTEUS_CONFIG_DIR:' 'controller config root must be explicit'
 
 log INFO "Compose static hardening audit passed path=$compose_file"
