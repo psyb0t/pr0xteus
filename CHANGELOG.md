@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.3 — 2026-08-14
+
+- Bumped the alpine base from 3.20.6 to 3.24.1 across the controller, cell, and
+  integration images, regenerating the pinned apk versions for the 3.24 branch.
+- Updated Go dependencies: `testcontainers-go` 0.43.0 → 0.44.0,
+  `moby/moby/api` 1.54.2 → 1.55.0, and `prometheus/client_golang`
+  1.23.2 → 1.24.1.
+
 ## v0.2.2 — 2026-08-14
 
 - Fixed the cell image build so the published multi-architecture image ships:
