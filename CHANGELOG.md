@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.1 — 2026-08-14
+
+- Granted each reusable-workflow caller the minimum token permissions its
+  called jobs require, fixing GitHub Actions startup failures for CI, releases,
+  mirrors, archives, badges, Docker publication, and ClawHub publication.
+
 ## v0.1.0 — 2026-08-14
 
 - Extracted pr0xteus into its own reusable Go and Docker project.

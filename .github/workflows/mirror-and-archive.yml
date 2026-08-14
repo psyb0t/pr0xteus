@@ -11,6 +11,8 @@ permissions: {}
 jobs:
   mirror:
     if: github.event_name == 'push'
+    permissions:
+      contents: read
     uses: psyb0t/reusable-github-workflows/.github/workflows/git-mirror.yml@master
     with:
       gitlab_enabled: true
@@ -25,6 +27,8 @@ jobs:
       github.event_name != 'push' ||
       github.ref_name == github.event.repository.default_branch ||
       startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
     uses: psyb0t/reusable-github-workflows/.github/workflows/archive.yml@master
     with:
       capture_outlinks: true
