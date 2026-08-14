@@ -6,7 +6,7 @@ require (
 	github.com/moby/moby/api v1.54.2
 	github.com/psyb0t/ctxerrors v0.7.1
 	github.com/psyb0t/ctxscope v1.0.3
-	github.com/psyb0t/goenv v1.0.3
+	github.com/psyb0t/goenv v1.0.10
 	github.com/psyb0t/gonfiguration v1.6.1
 	github.com/psyb0t/slogging v1.7.0
 	github.com/spf13/cobra v1.10.2
