@@ -632,7 +632,7 @@ github.com/kisielk/errcheck/errcheck
 # github.com/kkHAIKE/contextcheck v1.1.6
 ## explicit; go 1.23.0
 github.com/kkHAIKE/contextcheck
-# github.com/klauspost/compress v1.18.6
+# github.com/klauspost/compress v1.19.1
 ## explicit; go 1.24
 github.com/klauspost/compress
 github.com/klauspost/compress/fse
@@ -738,7 +738,7 @@ github.com/moby/docker-image-spec/specs-go/v1
 github.com/moby/go-archive
 github.com/moby/go-archive/compression
 github.com/moby/go-archive/tarheader
-# github.com/moby/moby/api v1.54.2
+# github.com/moby/moby/api v1.55.0
 ## explicit; go 1.24
 github.com/moby/moby/api/pkg/authconfig
 github.com/moby/moby/api/pkg/stdcopy
@@ -759,7 +759,7 @@ github.com/moby/moby/api/types/storage
 github.com/moby/moby/api/types/swarm
 github.com/moby/moby/api/types/system
 github.com/moby/moby/api/types/volume
-# github.com/moby/moby/client v0.4.0
+# github.com/moby/moby/client v0.5.0
 ## explicit; go 1.24
 github.com/moby/moby/client
 github.com/moby/moby/client/internal
@@ -844,8 +844,8 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/client_golang v1.23.2
-## explicit; go 1.23.0
+# github.com/prometheus/client_golang v1.24.1
+## explicit; go 1.25.0
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
 github.com/prometheus/client_golang/prometheus
@@ -858,12 +858,12 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
 # github.com/prometheus/client_model v0.6.2
 ## explicit; go 1.22.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.66.1
-## explicit; go 1.23.0
+# github.com/prometheus/common v0.70.1
+## explicit; go 1.25.0
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/model
-# github.com/prometheus/procfs v0.16.1
-## explicit; go 1.23.0
+# github.com/prometheus/procfs v0.21.1
+## explicit; go 1.25.0
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
@@ -1029,13 +1029,14 @@ github.com/stretchr/testify/require
 # github.com/subosito/gotenv v1.6.0
 ## explicit; go 1.18
 github.com/subosito/gotenv
-# github.com/testcontainers/testcontainers-go v0.43.0
+# github.com/testcontainers/testcontainers-go v0.44.0
 ## explicit; go 1.25.0
 github.com/testcontainers/testcontainers-go
 github.com/testcontainers/testcontainers-go/exec
 github.com/testcontainers/testcontainers-go/internal
 github.com/testcontainers/testcontainers-go/internal/config
 github.com/testcontainers/testcontainers-go/internal/core
+github.com/testcontainers/testcontainers-go/internal/core/bootstrap
 github.com/testcontainers/testcontainers-go/internal/core/network
 github.com/testcontainers/testcontainers-go/log
 github.com/testcontainers/testcontainers-go/network
@@ -1173,9 +1174,6 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# go.yaml.in/yaml/v2 v2.4.2
-## explicit; go 1.15
-go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.4
 ## explicit; go 1.16
 go.yaml.in/yaml/v3

@@ -21,11 +21,11 @@ RUN CGO_ENABLED=0 go build -a \
 
 # Runtime stays deliberately tiny. BusyBox provides the local wget applet used
 # by Compose's healthcheck; it contains no compiler, source, or package cache.
-FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ced453c1cc5f
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 ARG PR0XTEUS_BUILT_CELL_IMAGE=psyb0t/pr0xteus:cell-latest
 
-RUN apk --no-cache add ca-certificates=20260413-r0
+RUN apk --no-cache add ca-certificates=20260611-r0
 RUN adduser -D -u 1500 -s /bin/sh pr0xteus && \
     install -d -o pr0xteus -g pr0xteus /app
 

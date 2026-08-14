@@ -3,7 +3,7 @@ module github.com/psyb0t/pr0xteus
 go 1.26.6
 
 require (
-	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/api v1.55.0
 	github.com/psyb0t/ctxerrors v0.7.1
 	github.com/psyb0t/ctxscope v1.0.3
 	github.com/psyb0t/goenv v1.0.10
@@ -11,14 +11,11 @@ require (
 	github.com/psyb0t/slogging v1.7.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.43.0
+	github.com/testcontainers/testcontainers-go v0.44.0
 	golang.org/x/net v0.57.0
 )
 
-require (
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
-)
+require github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
@@ -141,7 +138,7 @@ require (
 	github.com/karamaru-alpha/copyloopvar v1.2.2 // indirect
 	github.com/kisielk/errcheck v1.9.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.6 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/kulti/thelper v0.7.1 // indirect
 	github.com/kunwardeep/paralleltest v1.0.15 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
@@ -168,7 +165,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/client v0.4.0
+	github.com/moby/moby/client v0.5.0
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
@@ -185,10 +182,10 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.66.1 // indirect
-	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/psyb0t/aichteeteapee v1.11.1
 	github.com/psyb0t/gofindimpl v1.0.0 // indirect
 	github.com/quasilyte/go-ruleguard v0.4.5 // indirect

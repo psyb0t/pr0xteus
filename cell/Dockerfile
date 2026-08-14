@@ -10,14 +10,14 @@
 # between rebuilds.
 
 # ─── builder: microsocks (single-binary, 50KB) ────────────────────
-FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ced453c1cc5f AS builder
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS builder
 
 ARG MICROSOCKS_TAG=v1.0.5
 ARG MICROSOCKS_SHA=98421a21c4adc4c77c0cf3a5d650cc28ad3e0107
 
 RUN apk add --no-cache \
-        build-base=0.5-r3 \
-        git=2.45.4-r0
+        build-base=0.5-r4 \
+        git=2.54.0-r0
 
 WORKDIR /build
 RUN git clone --depth=1 --branch=${MICROSOCKS_TAG} \
@@ -27,7 +27,7 @@ RUN git clone --depth=1 --branch=${MICROSOCKS_TAG} \
     && strip microsocks
 
 # ─── runtime ─────────────────────────────────────────────────────
-FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ced453c1cc5f
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # - wireguard-tools: wg-quick + wg
 # - iptables / ip6tables: kill switch (block any traffic that
@@ -38,13 +38,13 @@ FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ce
 #   resolver supplies DNS; once WG is up resolv.conf is switched)
 # - netcat-openbsd: TCP liveness probe for the SOCKS5 listener
 RUN apk add --no-cache \
-		bash=5.2.26-r0 \
-		bind-tools=9.18.49-r0 \
-		iproute2=6.9.0-r0 \
-		iptables=1.8.10-r3 \
-		netcat-openbsd=1.226-r0 \
-		su-exec=0.2-r3 \
-        wireguard-tools=1.0.20210914-r4
+		bash=5.3.9-r1 \
+		bind-tools=9.20.26-r0 \
+		iproute2=7.0.0-r0 \
+		iptables=1.8.13-r0 \
+		netcat-openbsd=1.234.1-r0 \
+		su-exec=0.3-r0 \
+        wireguard-tools=1.0.20260223-r0
 
 COPY --from=builder /build/microsocks /usr/local/bin/microsocks
 COPY cell/entrypoint.sh /entrypoint.sh
