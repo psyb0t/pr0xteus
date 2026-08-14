@@ -10,7 +10,9 @@ Your Docker services need to leave through a VPN, but you do not want to hand
 them a provider account, turn the host into a VPN client, or accidentally run
 an open proxy. pr0xteus is the small private control plane between those
 things: give it WireGuard files you are allowed to use, and trusted containers
-get short-lived SOCKS5 exits from the pools you approve.
+get short-lived SOCKS5 exits from the pools you approve. Every live exit is
+observable — see how many requests and bytes went through each cell and to which
+destinations, and destroy any of them on demand.
 
 ## Contents
 
@@ -273,10 +275,32 @@ GET    /metrics                # Prometheus, separate metrics listener
 ```
 
 `POST /v1/proxies` returns a private `socks5://` URL only after the cell has
-completed its WireGuard handshake wait and opened its SOCKS5 listener. The
-`/v1/cells` routes report, per cell, how many requests and bytes flowed and to
-which destinations, and let an operator kill a specific cell. The exact request,
-response, and failure contract live in [docs/api.md](docs/api.md).
+completed its WireGuard handshake wait and opened its SOCKS5 listener.
+
+`GET /v1/cells` is the observability view: cells are discovered straight from
+Docker (by a `pr0xteus.parent.id` label — no in-memory registry to drift), and
+each carries the live traffic snapshot scraped from its cellproxy control port:
+
+```console
+$ curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/v1/cells
+{
+  "cells": [
+    {
+      "containerId": "9f3c1a2b4d5e", "pool": "primary", "state": "running",
+      "traffic": {
+        "requests": 42, "bytesUp": 18234, "bytesDown": 918273, "active": 3,
+        "destinations": [
+          { "destination": "example.com:443", "requests": 40, "bytesDown": 900000 }
+        ]
+      }
+    }
+  ]
+}
+```
+
+`GET /v1/cells/{id}` inspects one cell and `DELETE /v1/cells/{id}` destroys it on
+demand. The exact request, response, and failure contract live in
+[docs/api.md](docs/api.md).
 
 ## Agent integrations
 

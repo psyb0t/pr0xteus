@@ -1,8 +1,11 @@
 # Cell image
 
 The cell is a disposable worker: one WireGuard configuration in, one private
-SOCKS5 listener out. The controller starts it lazily and removes it after an
-idle or unhealthy period.
+SOCKS5 listener out. It runs `cellproxy` — a first-party Go SOCKS5 proxy built
+from this repo's own source — which also serves a control HTTP endpoint
+(`/healthz` + `/status`) reporting per-cell traffic on the private Docker network
+only. The controller starts the cell lazily and removes it after an idle or
+unhealthy period.
 
 ## Boot sequence
 
@@ -17,8 +20,9 @@ idle or unhealthy period.
    default route through `wg0`.
 6. Wait for a real WireGuard handshake until the bounded startup deadline.
 7. Permit traffic on `wg0`, configure tunnel DNS when provided, and open the
-   SOCKS5 listener only to the private Docker network.
-8. Start microSocks as the unprivileged `proxyuser` account.
+   SOCKS5 and control ports only to the private Docker network.
+8. Start cellproxy (SOCKS5 + control HTTP) as the unprivileged `proxyuser`
+   account.
 
 Failure at any point tears the interface down. The worker must not turn into a
 normal clear-net proxy when the tunnel is absent.
@@ -31,7 +35,7 @@ a default. The Compose-spawned cell has only `NET_ADMIN`, `SETUID`, and
 `SETGID` plus the `/dev/net/tun` device, all other capabilities dropped, no
 Docker socket, and a single read-only WireGuard-file mount. `SETUID` and
 `SETGID` are required only for `su-exec`'s one-way final drop to UID 1500; they
-do not grant any new host access. Once setup completes, microSocks runs as UID
+do not grant any new host access. Once setup completes, cellproxy runs as UID
 1500.
 
 The root filesystem cannot be globally read-only: WireGuard setup creates
@@ -40,10 +44,10 @@ files live only for the life of the auto-removed container.
 
 ## Image build
 
-`Dockerfile` builds microSocks from a pinned tag and verifies the exact commit
-before compiling it statically. Runtime uses a digest-pinned Alpine base with
-only the WireGuard, firewall, routing, DNS, liveness, and privilege-drop tools
-needed to boot the worker.
+`Dockerfile` builds the `cellproxy` binary from this repo's own vendored Go
+source in a pinned `golang` builder stage, statically linked. Runtime uses a
+digest-pinned Alpine base with only the WireGuard, firewall, routing, DNS,
+liveness, and privilege-drop tools needed to boot the worker.
 
 Use `make build-cell`; it is the supported local build entry point and creates
 `psyb0t/pr0xteus:cell-dev`. A published controller carries its matching cell

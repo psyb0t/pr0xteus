@@ -15,6 +15,9 @@ The production Go binary is built from the runtime imports declared in
 - `github.com/prometheus/client_golang` — Apache-2.0; notice at
   `vendor/github.com/prometheus/client_golang/LICENSE`.
 - `golang.org/x/net` — BSD-style; notice at `vendor/golang.org/x/net/LICENSE`.
+- `github.com/things-go/go-socks5` — MIT (© 2014 Armon Dadgar); the SOCKS5
+  server library the cell's `cellproxy` binary is built on. Notice at
+  `vendor/github.com/things-go/go-socks5/LICENSE`.
 - `gopkg.in/yaml.v3` — Apache-2.0 plus MIT-origin files; notice at
   `vendor/gopkg.in/yaml.v3/LICENSE`.
 - `github.com/psyb0t/aichteeteapee`, `ctxerrors`, and `gonfiguration` — MIT.
@@ -23,11 +26,12 @@ The production Go binary is built from the runtime imports declared in
 
 ## Cell image
 
-The cell image builds [microSocks](https://github.com/rofl0r/microsocks) from
-the exact `v1.0.5` commit verified in `cell/Dockerfile`. microSocks is MIT
-licensed; its `COPYING` file names copyright © 2017 rofl0r. The image also
-contains unmodified Alpine packages, including WireGuard tooling, iproute2,
-iptables, Bash, and `su-exec`; their package licenses are supplied by Alpine.
+The cell image builds the `cellproxy` binary from this repository's own vendored
+Go source (`cmd/cellproxy`), so its dependency notices are the Go modules listed
+above — notably `github.com/things-go/go-socks5`. The image also contains
+unmodified Alpine packages, including WireGuard tooling, iproute2, iptables,
+Bash, `netcat-openbsd`, and `su-exec`; their package licenses are supplied by
+Alpine.
 
 ## Development-only tools
 
