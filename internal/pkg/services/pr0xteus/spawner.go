@@ -84,6 +84,21 @@ const (
 	LabelPool    = "pr0xteus.pool"
 	LabelConf    = "pr0xteus.conf"
 	LabelScope   = "pr0xteus.scope"
+
+	// LabelParent records the spawning controller's own container ID so the
+	// controller can rediscover its children with a docker label filter and a
+	// cell can report which parent it belongs to.
+	LabelParent = "pr0xteus.parent.id"
+
+	// Cell environment variable names. cellproxy reads its listen ports and its
+	// parent identity from these; the entrypoint reads the ports for the iptables
+	// kill-switch rules.
+	envCellSocksPort   = "PR0XTEUS_SOCKS5_PORT"
+	envCellControlPort = "PR0XTEUS_CELL_CONTROL_PORT"
+	envCellParentID    = "PR0XTEUS_PARENT_ID"
+
+	// controlURLScheme is the scheme of the cell control HTTP base URL.
+	controlURLScheme = "http"
 )
 
 // HTTPDoer is the subset of *http.Client used by the spawner to
@@ -288,7 +303,7 @@ func (s *CellSpawner) Kill(
 	if _, err := s.docker.ContainerRemove(
 		ctx, containerID,
 		client.ContainerRemoveOptions{Force: true},
-	); err != nil && !isNotFound(err) {
+	); err != nil && !isNotFound(err) && !isRemovalInProgress(err) {
 		return ctxerrors.Wrapf(
 			err, "remove container %s", containerID,
 		)
@@ -297,26 +312,42 @@ func (s *CellSpawner) Kill(
 	return nil
 }
 
-// buildContainerConfig fills the docker Container config. The
-// pr0xteus cell image needs no env — it parses the bind-mounted
-// .conf itself at boot. Labels are how the reconciler finds + reaps
-// orphan cells across process restarts.
+// buildContainerConfig fills the docker Container config. cellproxy reads its
+// SOCKS5 + control ports and its parent identity from the environment; the
+// entrypoint reads the ports for its iptables kill-switch. Labels are how the
+// reconciler finds + reaps orphan cells across process restarts, and how the
+// controller rediscovers the children of this specific parent.
 func (s *CellSpawner) buildContainerConfig(
 	req SpawnRequest,
 ) *container.Config {
 	socksPort := mustParsePort(s.cfg.CellSocksPort)
+	controlPort := mustParsePort(s.cfg.CellControlPort)
+
+	env := []string{
+		envCellSocksPort + "=" + strconvItoa(s.cfg.CellSocksPort),
+		envCellControlPort + "=" + strconvItoa(s.cfg.CellControlPort),
+	}
+
+	labels := map[string]string{
+		LabelManaged: "true",
+		LabelPool:    req.Pool,
+		LabelConf:    req.ConfName,
+		LabelScope:   s.cfg.ManagedScope,
+	}
+
+	if s.cfg.ParentID != "" {
+		env = append(env, envCellParentID+"="+s.cfg.ParentID)
+		labels[LabelParent] = s.cfg.ParentID
+	}
 
 	return &container.Config{
 		Image: s.cfg.CellImage,
+		Env:   env,
 		ExposedPorts: mobynet.PortSet{
-			socksPort: struct{}{},
+			socksPort:   struct{}{},
+			controlPort: struct{}{},
 		},
-		Labels: map[string]string{
-			LabelManaged: "true",
-			LabelPool:    req.Pool,
-			LabelConf:    req.ConfName,
-			LabelScope:   s.cfg.ManagedScope,
-		},
+		Labels: labels,
 	}
 }
 
@@ -641,6 +672,19 @@ func isNotFound(err error) bool {
 		strings.Contains(msg, "is not running")
 }
 
+// isRemovalInProgress reports whether a container-remove error is the benign
+// AutoRemove race: cells run with AutoRemove enabled, so a stop can trigger
+// docker's own removal, and an explicit remove issued right after may find one
+// already underway. The container is going away either way, so Kill treats this
+// as success rather than surfacing a 500 to an on-demand DELETE.
+func isRemovalInProgress(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.Contains(err.Error(), "is already in progress")
+}
+
 // mustParsePort builds a moby network.Port from an int port number;
 // panic-on-malformed since the inputs come from the config struct
 // which is validated at load.
@@ -700,6 +744,64 @@ func (s *CellSpawner) ReapOrphans(
 	}
 
 	return reaped, nil
+}
+
+// ListChildren discovers this controller's live cells directly from docker:
+// every managed container carrying this controller's parent-id label, each with
+// its control URL resolved from its current ephemeral IP on the cell network.
+// Docker is the source of truth, so a cell that in-memory pool state lost track
+// of still shows up here. When no parent id is known it falls back to the
+// managed-scope label.
+func (s *CellSpawner) ListChildren(ctx context.Context) ([]CellHandle, error) {
+	filters := client.Filters{}.Add("label", LabelManaged+"=true")
+	if s.cfg.ParentID != "" {
+		filters = filters.Add("label", LabelParent+"="+s.cfg.ParentID)
+	} else {
+		filters = filters.Add("label", LabelScope+"="+s.cfg.ManagedScope)
+	}
+
+	listed, err := s.docker.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: filters,
+	})
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "list child cells")
+	}
+
+	handles := make([]CellHandle, 0, len(listed.Items))
+	for _, c := range listed.Items {
+		handles = append(handles, CellHandle{
+			ContainerID: c.ID,
+			Pool:        c.Labels[LabelPool],
+			ConfName:    c.Labels[LabelConf],
+			State:       string(c.State),
+			ControlURL:  s.controlURLFromSummary(c),
+			CreatedAt:   time.Unix(c.Created, 0).UTC(),
+		})
+	}
+
+	return handles, nil
+}
+
+// controlURLFromSummary resolves a cell's cellproxy control base URL from its
+// current ephemeral IP on the cell network, or nil when there is no reachable
+// control address (host-loopback smoke mode, or no endpoint on the network yet).
+func (s *CellSpawner) controlURLFromSummary(c container.Summary) *url.URL {
+	if s.cfg.CellNetwork == "" || c.NetworkSettings == nil {
+		return nil
+	}
+
+	endpoint, ok := c.NetworkSettings.Networks[s.cfg.CellNetwork]
+	if !ok || endpoint == nil || !endpoint.IPAddress.IsValid() {
+		return nil
+	}
+
+	return &url.URL{
+		Scheme: controlURLScheme,
+		Host: net.JoinHostPort(
+			endpoint.IPAddress.String(), strconvItoa(s.cfg.CellControlPort),
+		),
+	}
 }
 
 // reapOne kills a single container with its own short-lived

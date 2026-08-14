@@ -32,8 +32,10 @@ get short-lived SOCKS5 exits from the pools you approve.
 ## What it does
 
 pr0xteus starts a short-lived Docker cell when a trusted caller needs a SOCKS5
-exit. Each cell owns one WireGuard configuration, waits for a handshake, runs
-microSocks, and is reaped once it is idle or unhealthy. Pools and country
+exit. Each cell owns one WireGuard configuration, waits for a handshake, and
+runs cellproxy — a first-party SOCKS5 proxy that also serves a control endpoint
+with per-cell traffic metrics and a real liveness check. A cell is reaped once
+it is idle (and carries no live connections) or unhealthy. Pools and country
 routing are operator-owned local files; callers cannot name configs, images,
 Docker arguments, or host paths.
 
@@ -261,15 +263,20 @@ pools:
 The API is versioned and JSON-only:
 
 ```text
-POST /v1/proxies  # request exactly one configured country or pool
-GET  /v1/pools    # authenticated pool/tunnel operator view
-GET  /healthz     # separate metrics listener, keep it private
-GET  /metrics     # Prometheus, separate metrics listener
+POST   /v1/proxies             # request exactly one configured country or pool
+GET    /v1/pools               # authenticated pool/tunnel operator view
+GET    /v1/cells               # live cells with per-cell traffic metrics
+GET    /v1/cells/{containerID} # one cell, including its traffic snapshot
+DELETE /v1/cells/{containerID} # destroy a cell on demand
+GET    /healthz                # separate metrics listener, keep it private
+GET    /metrics                # Prometheus, separate metrics listener
 ```
 
 `POST /v1/proxies` returns a private `socks5://` URL only after the cell has
 completed its WireGuard handshake wait and opened its SOCKS5 listener. The
-exact request, response, and failure contract live in [docs/api.md](docs/api.md).
+`/v1/cells` routes report, per cell, how many requests and bytes flowed and to
+which destinations, and let an operator kill a specific cell. The exact request,
+response, and failure contract live in [docs/api.md](docs/api.md).
 
 ## Agent integrations
 
@@ -328,7 +335,7 @@ make test-coverage # runs all test packages and requires 90% production coverage
 make audit         # govulncheck
 make audit-compose # Compose safety checks
 make build         # controller image
-make build-cell    # WireGuard + microSocks image
+make build-cell    # WireGuard + cellproxy image
 ```
 
 `make test-integration` uses Testcontainers to build and start the production
@@ -376,8 +383,10 @@ re-implementing the HTTP contract.
   controller API through Tailscale Serve.
 - A cell has the specific WireGuard exception: `NET_ADMIN` and `/dev/net/tun`,
   plus `SETUID`/`SETGID` solely for its one-way final drop to the non-root
-  microSocks account. It begins with default-drop firewall policy, allows the
-  WireGuard peer, and does not start microSocks until a handshake arrives.
+  cellproxy account. It begins with default-drop firewall policy, allows the
+  WireGuard peer, and does not start cellproxy until a handshake arrives. The
+  cellproxy control server is opened only on the internal cell network, never on
+  the WireGuard egress side.
 - Real configuration and tokens are neither tracked nor included in either
   image build context.
 - The controller accepts a strict, size-bounded JSON body and stores only a
@@ -396,7 +405,7 @@ cmd/        — process entry point
 internal/   — API, pool manager, Docker spawner, reaper, metrics
 pkg/client/ — public Go client for the private control API
 tests/      — Testcontainers-backed controller, WireGuard, cell, and SOCKS5 tests
-cell/       — WireGuard + microSocks worker image and entrypoint
+cell/       — WireGuard + cellproxy worker image and entrypoint
 docs/       — architecture, deployment, and API references
 scripts/    — Makefile-backed dependency and image helpers
 ```

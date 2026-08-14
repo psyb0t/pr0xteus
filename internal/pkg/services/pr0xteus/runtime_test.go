@@ -23,6 +23,14 @@ type runtimeTestSpawner struct {
 	spawnErrors   map[string]error
 	kills         []string
 	spawnGate     <-chan struct{}
+	children      []CellHandle
+}
+
+func (s *runtimeTestSpawner) ListChildren(_ context.Context) ([]CellHandle, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.children, nil
 }
 
 func (s *runtimeTestSpawner) Spawn(

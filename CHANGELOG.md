@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.0 — 2026-08-14
+
+- Replaced microSocks in the cell with `cellproxy`, a first-party Go SOCKS5
+  proxy built from this repo's own source. It records per-cell traffic — request
+  counts, bytes up/down, live-connection count, dial failures, and a bounded
+  byte-ranked destination breakdown — and serves them, plus a real liveness
+  check, on an internal control HTTP port reachable only over the cell network.
+  The public `socks5://` contract from `POST /v1/proxies` is unchanged.
+- Each cell now records its parent controller (a `pr0xteus.parent.id` label plus
+  a `PR0XTEUS_PARENT_ID` env var), so the controller rediscovers its children by
+  querying Docker rather than trusting only in-memory state.
+- The reaper now probes each cell's real `cellproxy` `/healthz` instead of a
+  handshake-age timer, and idle-reap is session-aware: a cell still carrying live
+  connections is not killed underneath its callers.
+- Added the cell observability API: `GET /v1/cells` (every live cell with its
+  traffic snapshot), `GET /v1/cells/{containerID}` (one cell), and
+  `DELETE /v1/cells/{containerID}` (destroy a cell on demand). Routes remain
+  hand-wired on `aichteeteapee`; see [ADR 0001](docs/adr/0001-cell-metrics-proxy-and-control-api.md).
+- New config: `PR0XTEUS_CELL_CONTROL_PORT` (default `9090`) and the auto-derived
+  `PR0XTEUS_PARENT_ID`.
+
 ## v0.2.3 — 2026-08-14
 
 - Bumped the alpine base from 3.20.6 to 3.24.1 across the controller, cell, and

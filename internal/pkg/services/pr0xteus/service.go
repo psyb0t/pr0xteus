@@ -195,7 +195,26 @@ func (s *Service) startAPI(ctx context.Context) error {
 
 	s.apiSrv = srv
 
-	router := &serbewr.Router{
+	router := buildAPIRouter(api)
+
+	go func() {
+		if err := srv.Start(ctx, router); err != nil &&
+			!errors.Is(err, context.Canceled) {
+			logger.Error("api server stopped", "err", err)
+
+			s.httpErr <- err
+		}
+	}()
+
+	logger.Info("pr0xteus api listening", "addr", s.cfg.HTTPAddr)
+
+	return nil
+}
+
+// buildAPIRouter wires the authenticated control-plane routes onto a serbewr
+// router with the standard middleware chain.
+func buildAPIRouter(api *APIServer) *serbewr.Router {
+	return &serbewr.Router{
 		GlobalMiddlewares: []middleware.Middleware{
 			middleware.RequestID(),
 			middleware.Logger(),
@@ -215,22 +234,24 @@ func (s *Service) startAPI(ctx context.Context) error {
 					Path:    pathV1Pools,
 					Handler: api.authenticate(api.handlePools),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    pathV1Cells,
+					Handler: api.authenticate(api.handleCells),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    pathV1CellByID,
+					Handler: api.authenticate(api.handleCell),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    pathV1CellByID,
+					Handler: api.authenticate(api.handleDeleteCell),
+				},
 			},
 		}},
 	}
-
-	go func() {
-		if err := srv.Start(ctx, router); err != nil &&
-			!errors.Is(err, context.Canceled) {
-			logger.Error("api server stopped", "err", err)
-
-			s.httpErr <- err
-		}
-	}()
-
-	logger.Info("pr0xteus api listening", "addr", s.cfg.HTTPAddr)
-
-	return nil
 }
 
 // startMetrics stands up the prometheus /metrics + /healthz endpoint

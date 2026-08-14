@@ -5,26 +5,17 @@
 # Caller (the orchestrator) talks SOCKS5 in, traffic comes out the
 # WG peer. Kill-switch + DNS-leak-proof from boot to ctx-cancel.
 #
-# Base + every package pinned. microsocks pulled at a tagged
-# commit SHA so a hijacked maintainer can't slip in a backdoor
-# between rebuilds.
+# The SOCKS5 endpoint is the first-party cellproxy binary, built from
+# this repo's own vendored source (pinned via go.sum), which also
+# serves per-cell traffic metrics + health on a control HTTP port.
 
-# ─── builder: microsocks (single-binary, 50KB) ────────────────────
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS builder
-
-ARG MICROSOCKS_TAG=v1.0.5
-ARG MICROSOCKS_SHA=98421a21c4adc4c77c0cf3a5d650cc28ad3e0107
-
-RUN apk add --no-cache \
-        build-base=0.5-r4 \
-        git=2.54.0-r0
+# ─── builder: the cellproxy binary (metrics-emitting SOCKS5 proxy) ──
+FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 WORKDIR /build
-RUN git clone --depth=1 --branch=${MICROSOCKS_TAG} \
-        https://github.com/rofl0r/microsocks.git . \
-    && [ "$(git rev-parse HEAD)" = "${MICROSOCKS_SHA}" ] \
-    && make CFLAGS="-O2 -static" LDFLAGS="-static" \
-    && strip microsocks
+COPY . .
+RUN CGO_ENABLED=0 go build -mod=vendor -trimpath \
+        -ldflags="-s -w" -o /cellproxy ./cmd/cellproxy
 
 # ─── runtime ─────────────────────────────────────────────────────
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
@@ -46,21 +37,21 @@ RUN apk add --no-cache \
 		su-exec=0.3-r0 \
         wireguard-tools=1.0.20260223-r0
 
-COPY --from=builder /build/microsocks /usr/local/bin/microsocks
+COPY --from=builder /cellproxy /usr/local/bin/cellproxy
 COPY cell/entrypoint.sh /entrypoint.sh
-RUN chmod 0755 /entrypoint.sh /usr/local/bin/microsocks
+RUN chmod 0755 /entrypoint.sh /usr/local/bin/cellproxy
 
-# Non-root user for microsocks. wg-quick + iptables run as root
+# Non-root user for cellproxy. wg-quick + iptables run as root
 # (need CAP_NET_ADMIN); entrypoint drops to this UID before exec'ing
 # the proxy.
 RUN adduser -D -H -s /sbin/nologin -u 1500 proxyuser
 
-# SOCKS5 listens here. Orchestrator publishes via docker port map.
-EXPOSE 1080
+# SOCKS5 (1080) + the control HTTP server (9090, health + metrics).
+EXPOSE 1080 9090
 
 # Healthcheck: TCP-level handshake on the SOCKS5 port. Note this
-# only proves the daemon is up. The controller additionally checks
-# the private SOCKS5 listener before returning its URL.
+# only proves the daemon is up. The controller additionally scrapes
+# the control server's /healthz and /status.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
     CMD nc -z 127.0.0.1 1080 || exit 1
 

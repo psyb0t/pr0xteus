@@ -3,6 +3,7 @@ package pr0xteus
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -167,6 +168,7 @@ func (r *Reaper) idleLoop(ctx context.Context) {
 func (r *Reaper) reapIdle(ctx context.Context) {
 	logger := ctxscope.GetLogger(ctx)
 	now := r.nowFn()
+	controlURLs := r.childControlURLs(ctx)
 
 	for name, state := range r.mgr.Pools() {
 		t := state.Snapshot()
@@ -184,6 +186,15 @@ func (r *Reaper) reapIdle(ctx context.Context) {
 				"tunnel idle but in-flight; deferring reap",
 				"pool", name, "container", t.ContainerID,
 				"in_flight", t.InFlight,
+			)
+
+			continue
+		}
+
+		if r.hasLiveConnections(ctx, t.ContainerID, controlURLs[t.ContainerID]) {
+			logger.Debug(
+				"tunnel idle but has live connections; deferring reap",
+				"pool", name, "container", t.ContainerID,
 			)
 
 			continue
@@ -217,6 +228,7 @@ func (r *Reaper) healthLoop(ctx context.Context) {
 // checkHealth is the per-tick body of the health loop.
 func (r *Reaper) checkHealth(ctx context.Context) {
 	logger := ctxscope.GetLogger(ctx)
+	controlURLs := r.childControlURLs(ctx)
 
 	for name, state := range r.mgr.Pools() {
 		t := state.Snapshot()
@@ -224,9 +236,9 @@ func (r *Reaper) checkHealth(ctx context.Context) {
 			continue
 		}
 
-		// Tunnel is hot. Probe the cell's SOCKS5 port; if the
-		// handshake aged out, mark unhealthy + kill.
-		healthy := r.probeHealthy(ctx, t)
+		// Tunnel is hot. Probe the cell's real cellproxy /healthz; if it does not
+		// answer (or the handshake aged out in smoke mode), mark unhealthy + kill.
+		healthy := r.probeHealthy(ctx, t, controlURLs[t.ContainerID])
 		if healthy {
 			state.mu.Lock()
 
@@ -251,37 +263,69 @@ func (r *Reaper) checkHealth(ctx context.Context) {
 	}
 }
 
-// probeHealthy returns true when the cell's SOCKS5 port reports a
-// running wireguard tunnel within HealthHandshakeMaxAge. We rely
-// on the cell's docker HEALTHCHECK reporting healthy — its internal
-// poll loop hits the wg interface every ~10s.
+// childControlURLs discovers this controller's cells from docker and maps each
+// container ID to its current cellproxy control URL. The health + idle loops
+// call it once per tick so each cell's address is whatever docker reports right
+// now, never a stored value that could go stale.
+func (r *Reaper) childControlURLs(ctx context.Context) map[string]*url.URL {
+	handles, err := r.spawner.ListChildren(ctx)
+	if err != nil {
+		ctxscope.GetLogger(ctx).Warn("listing cells for reap failed", "err", err)
+
+		return nil
+	}
+
+	urls := make(map[string]*url.URL, len(handles))
+	for _, handle := range handles {
+		if handle.ControlURL != nil {
+			urls[handle.ContainerID] = handle.ControlURL
+		}
+	}
+
+	return urls
+}
+
+// probeHealthy reports whether a hot tunnel is still serving. With a control URL
+// (cell-network mode) it hits the cell's cellproxy /healthz — a real liveness
+// signal, not a timer. In host-loopback smoke mode the control server has no
+// stable address, so it falls back to the handshake-age heuristic: a tunnel
+// whose last confirmed-healthy timestamp aged past HealthHandshakeMaxAge is
+// assumed to have rotated past its keepalive window and is respawned.
 func (r *Reaper) probeHealthy(
-	ctx context.Context, t *Tunnel,
+	ctx context.Context, t *Tunnel, controlURL *url.URL,
 ) bool {
-	// Probe URL is the cell's SOCKS5 listener port. We don't have the
-	// host port mapping persisted on Tunnel — derive it from the
-	// container ID via a docker inspect would be cleanest, but
-	// for v1 the spawner already verified the tunnel was healthy
-	// at boot and the container's wg handshake is the actual SLO.
-	//
-	// In practice the operator can rely on:
-	//   - LastUsedAt staleness (idleLoop kills cold tunnels)
-	//   - the spawner's own pre-hot probe (already verified
-	//     running at spawn time)
-	//
-	// v3 wires probeControlPort against the persisted host port.
-	// For v1 the simpler heuristic is sufficient: if the tunnel
-	// is older than HealthHandshakeMaxAge AND no one has touched
-	// it recently, assume the wg session has rotated past its
-	// keepalive window and force a respawn.
+	if controlURL != nil {
+		return cellControlClient{http: r.http}.Healthy(ctx, controlURL)
+	}
+
 	age := r.nowFn().Sub(t.HealthyAt)
-	if age > r.cfg.HealthHandshakeMaxAge {
+
+	return age <= r.cfg.HealthHandshakeMaxAge
+}
+
+// hasLiveConnections reports whether the cell currently has active proxied
+// connections, per its cellproxy /status. This makes idle-reap session-aware:
+// a tunnel untouched by the allocator but still carrying live traffic is not
+// killed underneath its callers. A nil control URL or failed status fetch
+// returns false so a cell that has genuinely died can still be reaped.
+func (r *Reaper) hasLiveConnections(
+	ctx context.Context, containerID string, controlURL *url.URL,
+) bool {
+	if controlURL == nil {
 		return false
 	}
 
-	_ = ctx
+	status, err := cellControlClient{http: r.http}.Status(ctx, controlURL)
+	if err != nil {
+		ctxscope.GetLogger(ctx).Debug(
+			"idle-reap status probe failed; treating as no live connections",
+			"container", containerID, "err", err,
+		)
 
-	return true
+		return false
+	}
+
+	return status.Traffic.Active > 0
 }
 
 // killTunnel marks the tunnel for reaping, fires docker stop, and

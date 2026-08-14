@@ -47,6 +47,9 @@ func NewAPIServer(mgr *Manager, token []byte) *APIServer {
 func (s *APIServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc(http.MethodPost+" "+pathV1Proxies, s.authenticate(s.handleProxy))
 	mux.HandleFunc(http.MethodGet+" "+pathV1Pools, s.authenticate(s.handlePools))
+	mux.HandleFunc(http.MethodGet+" "+pathV1Cells, s.authenticate(s.handleCells))
+	mux.HandleFunc(http.MethodGet+" "+pathV1CellByID, s.authenticate(s.handleCell))
+	mux.HandleFunc(http.MethodDelete+" "+pathV1CellByID, s.authenticate(s.handleDeleteCell))
 }
 
 // Mux returns a stdlib handler with every API route wired. It is also a small

@@ -2,6 +2,7 @@ package pr0xteus
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"time"
 
@@ -9,7 +10,13 @@ import (
 	"github.com/psyb0t/gonfiguration"
 )
 
-const maxAPITokenBytes = 4096
+const (
+	maxAPITokenBytes = 4096
+
+	// minPort/maxPort bound every operator-supplied TCP port.
+	minPort = 1
+	maxPort = 65535
+)
 
 // Config is the env-driven configuration for pr0xteus. Each field is parsed
 // once at boot; invalid configuration fails closed before Docker is touched.
@@ -58,6 +65,18 @@ type Config struct {
 	// CellSocksPort is the in-container SOCKS5 listener port.
 	CellSocksPort int `default:"1080" env:"PR0XTEUS_CELL_SOCKS_PORT"`
 
+	// CellControlPort is the in-container cellproxy control HTTP port, serving
+	// /healthz and /status (traffic metrics). Reached by the controller over the
+	// cell network only; never bound to the WireGuard egress side.
+	CellControlPort int `default:"9090" env:"PR0XTEUS_CELL_CONTROL_PORT"`
+
+	// ParentID is this controller's own container ID, stamped onto every cell it
+	// spawns (both a docker label and an env var) so a cell records the parent it
+	// belongs to and the controller can rediscover its children by label. Empty
+	// falls back to the controller's hostname, which under docker is its own
+	// short container ID.
+	ParentID string `env:"PR0XTEUS_PARENT_ID"`
+
 	// CellNetwork is the Docker network where cells and consumers meet. Empty
 	// enables the deliberately limited host-loopback smoke-test mode.
 	CellNetwork string `default:"" env:"PR0XTEUS_CELL_NETWORK"`
@@ -99,11 +118,11 @@ func LoadConfig() (Config, error) {
 		)
 	}
 
-	if cfg.CellSocksPort < 1 || cfg.CellSocksPort > 65535 {
-		return Config{}, ctxerrors.Wrap(
-			ErrConfigInvalid, "PR0XTEUS_CELL_SOCKS_PORT must be in 1..65535",
-		)
+	if err := cfg.validatePorts(); err != nil {
+		return Config{}, err
 	}
+
+	cfg.resolveParentID()
 
 	if _, err := ValidateAPIToken(cfg.APIToken); err != nil {
 		return Config{}, ctxerrors.Wrap(err, "validate PR0XTEUS_API_TOKEN")
@@ -116,6 +135,47 @@ func LoadConfig() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// validatePorts checks the in-container cell ports are in range and distinct.
+func (cfg *Config) validatePorts() error {
+	if cfg.CellSocksPort < minPort || cfg.CellSocksPort > maxPort {
+		return ctxerrors.Wrap(
+			ErrConfigInvalid, "PR0XTEUS_CELL_SOCKS_PORT must be in 1..65535",
+		)
+	}
+
+	if cfg.CellControlPort < minPort || cfg.CellControlPort > maxPort {
+		return ctxerrors.Wrap(
+			ErrConfigInvalid, "PR0XTEUS_CELL_CONTROL_PORT must be in 1..65535",
+		)
+	}
+
+	if cfg.CellControlPort == cfg.CellSocksPort {
+		return ctxerrors.Wrap(
+			ErrConfigInvalid,
+			"PR0XTEUS_CELL_CONTROL_PORT must differ from PR0XTEUS_CELL_SOCKS_PORT",
+		)
+	}
+
+	return nil
+}
+
+// resolveParentID fills ParentID from the controller's hostname when the
+// operator did not set PR0XTEUS_PARENT_ID. Under docker the hostname is the
+// container's own short ID, which is exactly the parent identity a cell records.
+// A hostname lookup failure is non-fatal: cells simply carry no parent label.
+func (cfg *Config) resolveParentID() {
+	if strings.TrimSpace(cfg.ParentID) != "" {
+		return
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return
+	}
+
+	cfg.ParentID = strings.TrimSpace(hostname)
 }
 
 func (cfg *Config) resolveCellImage() (bool, error) {

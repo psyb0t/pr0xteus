@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -435,12 +436,20 @@ type Manager struct {
 	pools   map[string]*PoolState
 	spawner Spawner
 
+	// control scrapes each cell's cellproxy /status + /healthz when the API
+	// lists cells or a caller inspects one.
+	control cellControlClient
+
 	// spawnMu serializes per-pool spawn requests. Map of pool name
 	// → mutex so two countries pointing at the same pool don't
 	// race-spawn two containers for the same pool.
 	spawnMuMu sync.Mutex
 	spawnMu   map[string]*sync.Mutex
 }
+
+// cellControlTimeout bounds a single control-plane scrape of a cell's /status
+// or /healthz so one wedged cell can't stall an API list of every cell.
+const cellControlTimeout = 3 * time.Second
 
 // NewManager constructs the in-process manager. Caller must call
 // Manager.Close to drain in-flight spawns + kill running tunnels
@@ -462,6 +471,9 @@ func NewManager(
 		specs:   specs,
 		pools:   pools,
 		spawner: spawner,
+		control: cellControlClient{
+			http: &http.Client{Timeout: cellControlTimeout},
+		},
 		spawnMu: make(map[string]*sync.Mutex),
 	}
 }
@@ -759,6 +771,24 @@ func (m *Manager) Pools() map[string]*PoolState { return m.pools }
 type Spawner interface {
 	Spawn(ctx context.Context, req SpawnRequest) (*Tunnel, error)
 	Kill(ctx context.Context, containerID string) error
+
+	// ListChildren discovers this controller's live cells straight from docker
+	// (by the pr0xteus.parent.id label), so the source of truth for which cells
+	// exist and where they are is docker, not in-memory pool state.
+	ListChildren(ctx context.Context) ([]CellHandle, error)
+}
+
+// CellHandle is one cell as docker currently reports it: its container ID,
+// origin labels, docker state, and the cellproxy control base URL resolved from
+// its current ephemeral IP on the cell network. ControlURL is nil when the cell
+// has no reachable control address (e.g. host-loopback smoke mode).
+type CellHandle struct {
+	ContainerID string
+	Pool        string
+	ConfName    string
+	State       string
+	ControlURL  *url.URL
+	CreatedAt   time.Time
 }
 
 // SpawnRequest is the input to Spawner.Spawn. The spawner is told

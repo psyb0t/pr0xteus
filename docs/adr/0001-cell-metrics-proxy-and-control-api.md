@@ -1,6 +1,11 @@
 # ADR 0001 — Cell metrics proxy and a spec-first control API
 
-Status: accepted (in progress)
+Status: accepted — phases 1–3 shipped (cellproxy live, docker-label discovery,
+real health probe, session-aware reaping, hand-wired `/v1/cells` API). Phase 4,
+the spec-first OpenAPI + `oapi-codegen` migration, is deliberately deferred: the
+new routes ship hand-wired on `aichteeteapee` like the existing `POST /v1/proxies`
+and `GET /v1/pools`, and the whole surface can move to codegen in one follow-up
+rather than running two API styles mid-migration.
 
 ## Context
 

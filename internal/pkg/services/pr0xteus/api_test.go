@@ -40,6 +40,10 @@ func (s *apiTestSpawner) Kill(_ context.Context, _ string) error {
 	return nil
 }
 
+func (s *apiTestSpawner) ListChildren(_ context.Context) ([]CellHandle, error) {
+	return nil, nil
+}
+
 func TestAPIServer_RejectsUnauthenticatedRequests(t *testing.T) {
 	t.Parallel()
 

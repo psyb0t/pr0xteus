@@ -50,14 +50,16 @@ trap 'log ERROR "entrypoint failed"; cleanup; exit 1' ERR
 
 WG_CONF="/etc/wireguard/wg0.conf"
 SRC_CONF="/wgconf/wg0.conf"
+# SOCKS5 bind/port and the control port are read from the environment by
+# cellproxy itself; the entrypoint only needs the ports for the iptables rules.
 SOCKS5_PORT="${PR0XTEUS_SOCKS5_PORT:-1080}"
-SOCKS5_BIND="${PR0XTEUS_SOCKS5_BIND:-0.0.0.0}"
+CONTROL_PORT="${PR0XTEUS_CELL_CONTROL_PORT:-9090}"
 HANDSHAKE_WAIT_SECONDS="${PR0XTEUS_HANDSHAKE_WAIT_SECONDS:-15}"
 
 cleanup() {
 	log INFO "tearing down tunnel interface"
-	# microsocks and the interface may already be gone during a failed boot.
-	pkill -TERM microsocks 2>/dev/null || true   # intentional: proxy may not have started
+	# cellproxy and the interface may already be gone during a failed boot.
+	pkill -TERM cellproxy 2>/dev/null || true    # intentional: proxy may not have started
 	ip link set dev wg0 down 2>/dev/null || true # intentional: interface may not exist
 	ip link delete dev wg0 2>/dev/null || true   # intentional: interface may already be gone
 }
@@ -215,9 +217,14 @@ wait_for_handshake
 iptables -A OUTPUT -o wg0 -j ACCEPT
 iptables -A INPUT -i wg0 -j ACCEPT
 
-# ─── 7. Inbound SOCKS5 from the docker port map ────────────────
+# ─── 7. Inbound SOCKS5 + control HTTP from the docker network ──
+# Both listen on eth0 (the cell network the controller shares); the
+# tunnel side (wg0) never accepts inbound, so the control server is
+# reachable only by the controller, never the egress peer.
 iptables -A INPUT -i "${EGRESS_IF}" \
 	-p tcp --dport "${SOCKS5_PORT}" -j ACCEPT
+iptables -A INPUT -i "${EGRESS_IF}" \
+	-p tcp --dport "${CONTROL_PORT}" -j ACCEPT
 
 # ─── 8. Resolv.conf points at WG DNS only (no DNS leak) ────────
 if [[ -n "${WG_DNS_RAW}" ]]; then
@@ -228,13 +235,15 @@ if [[ -n "${WG_DNS_RAW}" ]]; then
 	log INFO "configured tunnel DNS"
 fi
 
-# ─── 9. Drop privileges + start microsocks ────────────────────────
-log INFO "starting SOCKS5 listener"
+# ─── 9. Drop privileges + start cellproxy ─────────────────────────
+log INFO "starting cellproxy SOCKS5 + control server"
 
-su-exec proxyuser \
-	microsocks -i "${SOCKS5_BIND}" -p "${SOCKS5_PORT}" &
-MS_PID=$!
+# cellproxy reads PR0XTEUS_SOCKS5_BIND/PORT and PR0XTEUS_CELL_CONTROL_*
+# (plus PR0XTEUS_PARENT_ID) from the environment the orchestrator set;
+# su-exec preserves that environment when it drops privileges.
+su-exec proxyuser cellproxy &
+PROXY_PID=$!
 
-# Wait for microsocks; signals (TERM/INT) hit the trap above and
+# Wait for cellproxy; signals (TERM/INT) hit the trap above and
 # call cleanup() before we exit.
-wait "${MS_PID}"
+wait "${PROXY_PID}"

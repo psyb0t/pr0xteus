@@ -224,6 +224,20 @@ func TestCellSpawner_KillTreatsMissingContainerAsSuccess(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCellSpawner_KillToleratesAutoRemoveRace(t *testing.T) {
+	t.Parallel()
+
+	// AutoRemove: true means the stop already triggered docker's own removal, so
+	// the explicit remove finds one in progress. Kill must treat that as done.
+	spawner := newSpawnerTestSubject(&spawnerTestDockerClient{
+		removeErr: ctxerrors.New(
+			"removal of container abc is already in progress",
+		),
+	})
+	err := spawner.Kill(context.Background(), "abc")
+	require.NoError(t, err)
+}
+
 func TestDetachedCleanupContext_PreservesScopeAfterCancellation(t *testing.T) {
 	t.Parallel()
 

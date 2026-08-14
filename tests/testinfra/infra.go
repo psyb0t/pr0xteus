@@ -471,6 +471,92 @@ func (i *Infra) AcquireProxyForCountry(
 	return assignment, nil
 }
 
+// CellSummary is the subset of the controller's GET /v1/cells view the
+// integration test asserts on.
+type CellSummary struct {
+	ContainerID string `json:"containerId"`
+	Pool        string `json:"pool"`
+	Traffic     *struct {
+		Requests int64 `json:"requests"`
+		Active   int64 `json:"active"`
+	} `json:"traffic"`
+}
+
+// ListCells exercises GET /v1/cells from a sibling container, returning the
+// controller's live view of every running cell (each carrying the traffic
+// snapshot scraped from its cellproxy /status).
+func (i *Infra) ListCells(ctx context.Context) ([]CellSummary, error) {
+	if i.Consumer == nil {
+		return nil, ctxerrors.New("SOCKS5 consumer is not running")
+	}
+
+	exitCode, output, err := i.Consumer.Exec(ctx, []string{
+		"curl",
+		"--fail-with-body",
+		"--silent",
+		"--show-error",
+		"--header", "Authorization: Bearer " + i.APIToken,
+		"http://" + controllerAlias + ":8000/v1/cells",
+	}, tcexec.Multiplexed())
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "execute list-cells request")
+	}
+
+	body, err := io.ReadAll(output)
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "read list-cells response")
+	}
+	if exitCode != 0 {
+		return nil, ctxerrors.Wrapf(
+			ctxerrors.New("non-success response"),
+			"list-cells request failed: %s", strings.TrimSpace(string(body)),
+		)
+	}
+
+	var decoded struct {
+		Cells []CellSummary `json:"cells"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, ctxerrors.Wrap(err, "decode list-cells response")
+	}
+
+	return decoded.Cells, nil
+}
+
+// DestroyCell exercises DELETE /v1/cells/{containerID} from a sibling container,
+// destroying a cell on demand.
+func (i *Infra) DestroyCell(ctx context.Context, containerID string) error {
+	if i.Consumer == nil {
+		return ctxerrors.New("SOCKS5 consumer is not running")
+	}
+
+	exitCode, output, err := i.Consumer.Exec(ctx, []string{
+		"curl",
+		"--fail-with-body",
+		"--silent",
+		"--show-error",
+		"--request", "DELETE",
+		"--header", "Authorization: Bearer " + i.APIToken,
+		"http://" + controllerAlias + ":8000/v1/cells/" + containerID,
+	}, tcexec.Multiplexed())
+	if err != nil {
+		return ctxerrors.Wrap(err, "execute destroy-cell request")
+	}
+
+	body, err := io.ReadAll(output)
+	if err != nil {
+		return ctxerrors.Wrap(err, "read destroy-cell response")
+	}
+	if exitCode != 0 {
+		return ctxerrors.Wrapf(
+			ctxerrors.New("non-success response"),
+			"destroy-cell request failed: %s", strings.TrimSpace(string(body)),
+		)
+	}
+
+	return nil
+}
+
 // AssertProxyEgress proves a returned private SOCKS5 URL routes a request
 // through the WireGuard peer. The target is an isolated HTTP server on the
 // peer itself, so CI never depends on a public API or provider account.
