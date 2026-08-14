@@ -8,6 +8,9 @@ permissions: {}
 
 jobs:
   gate:
+    permissions:
+      issues: write
+      pull-requests: write
     uses: psyb0t/reusable-github-workflows/.github/workflows/collaborators-only-workflow.yml@master
     with:
       close_message: "No drive-by PRs for this one. Open an issue with the problem and repro instead."

@@ -25,8 +25,8 @@ git-update.sh
 .env.local
 .env.*
 !.env.example
-secrets/
-config/
+/secrets/
+/config/
 
 # Test / profile artifacts
 coverage.txt
@@ -37,9 +37,9 @@ profile.out
 htmlcov/
 
 # Build outputs
-bin/
-build/
-dist/
+/bin/
+/build/
+/dist/
 
 # Editor / IDE
 .vscode/

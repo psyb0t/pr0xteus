@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.2 — 2026-08-14
+
+- Fixed vendoring so Go can resolve Moby's `api/types/build` package and
+  Testcontainers' `internal/config` package in CI instead of losing them to
+  broad root-output ignore rules.
+- Pinned the reusable Go workflow to the repository's required Go 1.26.6
+  toolchain and granted the collaborator gate its required issue and pull
+  request permissions.
+
 ## v0.1.1 — 2026-08-14
 
 - Granted each reusable-workflow caller the minimum token permissions its
