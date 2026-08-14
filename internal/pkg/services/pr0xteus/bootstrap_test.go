@@ -157,3 +157,240 @@ func readBootstrapFixture(t *testing.T, path string) []byte {
 
 	return contents
 }
+
+func TestCheckedImageReference(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{name: "trims and accepts", value: " psyb0t/pr0xteus:v1 ", want: "psyb0t/pr0xteus:v1"},
+		{name: "empty", value: "  ", wantErr: true},
+		{name: "embedded space", value: "psyb0t/pr0xteus v1", wantErr: true},
+		{name: "embedded newline", value: "psyb0t/pr0xteus\nv1", wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := checkedImageReference(tc.value)
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrConfigInvalid)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRenderEnvFileDevelopmentModeWritesLocalImages(t *testing.T) {
+	t.Parallel()
+
+	env := renderEnvFile("/abs/config", "ignored/in/dev:mode", "dev-token", true)
+	assert.Contains(t, env, "PR0XTEUS_CONFIG_DIR=/abs/config")
+	assert.Contains(t, env, "PR0XTEUS_CONTROLLER_IMAGE="+developmentControllerImage)
+	assert.Contains(t, env, "PR0XTEUS_CELL_IMAGE="+developmentCellImage)
+	assert.Contains(t, env, "PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=true")
+	assert.Contains(t, env, apiTokenEnvName+"=dev-token")
+	assert.NotContains(t, env, "ignored/in/dev:mode")
+}
+
+func TestWriteFileIfAbsentRejectsIrregularTargets(t *testing.T) {
+	t.Parallel()
+
+	t.Run("existing directory", func(t *testing.T) {
+		t.Parallel()
+
+		created, err := writeFileIfAbsent(t.TempDir(), []byte("x"))
+		require.ErrorIs(t, err, ErrConfigInvalid)
+		assert.False(t, created)
+	})
+
+	t.Run("existing symlink", func(t *testing.T) {
+		t.Parallel()
+
+		base := t.TempDir()
+		target := filepath.Join(base, "target")
+		require.NoError(t, os.WriteFile(target, []byte("t"), 0o600))
+		link := filepath.Join(base, "link")
+		require.NoError(t, os.Symlink(target, link))
+
+		created, err := writeFileIfAbsent(link, []byte("x"))
+		require.ErrorIs(t, err, ErrConfigInvalid)
+		assert.False(t, created)
+	})
+
+	t.Run("creates a new file only once", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "new")
+		created, err := writeFileIfAbsent(path, []byte("hello"))
+		require.NoError(t, err)
+		assert.True(t, created)
+
+		again, err := writeFileIfAbsent(path, []byte("ignored"))
+		require.NoError(t, err)
+		assert.False(t, again)
+		assert.Equal(t, "hello", string(readBootstrapFixture(t, path)))
+	})
+}
+
+func TestEnsurePrivateDirectoryRejectsNonDirectory(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
+	require.ErrorIs(t, ensurePrivateDirectory(path), ErrConfigInvalid)
+}
+
+func TestCheckedExistingDirectory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects a relative path", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := checkedExistingDirectory("rel")
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+
+	t.Run("rejects a file", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "file")
+		require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
+		_, err := checkedExistingDirectory(path)
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+
+	t.Run("accepts a real directory", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		got, err := checkedExistingDirectory(dir)
+		require.NoError(t, err)
+		assert.Equal(t, dir, got)
+	})
+}
+
+func TestBootstrapConfigRejectsInvalidImageAndHostDir(t *testing.T) {
+	t.Parallel()
+
+	t.Run("blank controller image", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := BootstrapConfig(BootstrapOptions{
+			ConfigDir:       t.TempDir(),
+			HostConfigDir:   t.TempDir(),
+			ControllerImage: "  ",
+		})
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+
+	t.Run("relative host config dir", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := BootstrapConfig(BootstrapOptions{
+			ConfigDir:       t.TempDir(),
+			HostConfigDir:   "relative/host",
+			ControllerImage: defaultControllerImage,
+		})
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+}
+
+func TestCheckConfigRejectsInvalidOperatorFiles(t *testing.T) {
+	t.Parallel()
+
+	seed := func(t *testing.T) string {
+		t.Helper()
+
+		configDir := t.TempDir()
+		_, err := BootstrapConfig(BootstrapOptions{
+			ConfigDir:       configDir,
+			HostConfigDir:   configDir,
+			ControllerImage: defaultControllerImage,
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(configDir, bundleRelativePath, "de.conf"),
+			[]byte("[Interface]\n"), 0o600,
+		))
+
+		return configDir
+	}
+
+	t.Run("no pools defined", func(t *testing.T) {
+		t.Parallel()
+
+		configDir := seed(t)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(configDir, poolsRelativePath),
+			[]byte("pools: {}\n"), 0o600,
+		))
+		require.ErrorIs(t,
+			CheckConfig(ConfigCheckOptions{ConfigDir: configDir}),
+			ErrConfigInvalid,
+		)
+	})
+
+	t.Run("routing names an unknown pool", func(t *testing.T) {
+		t.Parallel()
+
+		configDir := seed(t)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(configDir, poolsRelativePath),
+			[]byte("pools:\n  eu:\n    configs: [de]\n    exit_countries:\n      de: DE\n"),
+			0o600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(configDir, routingRelativePath),
+			[]byte("country_to_pool:\n  DE: missing\n"), 0o600,
+		))
+		require.ErrorIs(t,
+			CheckConfig(ConfigCheckOptions{ConfigDir: configDir}),
+			ErrConfigInvalid,
+		)
+	})
+}
+
+func TestLoadAPITokenFromDotEnv(t *testing.T) {
+	t.Parallel()
+
+	t.Run("skips comments and blanks and strips quotes", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), dotEnvFileName)
+		require.NoError(t, os.WriteFile(path, []byte(
+			"# generated file\n\nPR0XTEUS_CONFIG_DIR=/x\n"+
+				apiTokenEnvName+"=\"tok-value\"\n",
+		), 0o600))
+
+		token, err := loadAPITokenFromDotEnv(path)
+		require.NoError(t, err)
+		assert.Equal(t, "tok-value", string(token))
+	})
+
+	t.Run("missing token key is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), dotEnvFileName)
+		require.NoError(t, os.WriteFile(path, []byte("# only comments\nOTHER=1\n"), 0o600))
+
+		_, err := loadAPITokenFromDotEnv(path)
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+
+	t.Run("missing file errors", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := loadAPITokenFromDotEnv(filepath.Join(t.TempDir(), "absent"))
+		require.Error(t, err)
+	})
+}

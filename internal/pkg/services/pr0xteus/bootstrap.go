@@ -29,6 +29,8 @@ const (
 	bundleRelativePath  = "secrets/wireguard"
 	routingRelativePath = "config/egress-routing.yaml"
 	tailscaleStatePath  = "tailscale/state"
+
+	configDirectoryLabel = "config directory"
 )
 
 //go:embed bootstrap/pools.yaml
@@ -164,7 +166,7 @@ func writeBootstrapFiles(configDir, hostConfigDir string, result *BootstrapResul
 // CheckConfig validates the bearer token, WireGuard bundle, pools, and routing
 // policy consumed by the controller. It never starts Docker or mutates files.
 func CheckConfig(options ConfigCheckOptions) error {
-	configDir, err := checkedExistingDirectory(options.ConfigDir, "config directory")
+	configDir, err := checkedExistingDirectory(options.ConfigDir)
 	if err != nil {
 		return err
 	}
@@ -219,19 +221,19 @@ func checkedAbsoluteDirectory(value, label string) (string, error) {
 	return path, nil
 }
 
-func checkedExistingDirectory(value, label string) (string, error) {
-	path, err := checkedAbsolutePath(value, label)
+func checkedExistingDirectory(value string) (string, error) {
+	path, err := checkedAbsolutePath(value, configDirectoryLabel)
 	if err != nil {
 		return "", err
 	}
 
 	info, err := os.Lstat(path)
 	if err != nil {
-		return "", ctxerrors.Wrapf(err, "stat %s", label)
+		return "", ctxerrors.Wrapf(err, "stat %s", configDirectoryLabel)
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", ctxerrors.Wrapf(ErrConfigInvalid, "%s must be a real directory", label)
+		return "", ctxerrors.Wrapf(ErrConfigInvalid, "%s must be a real directory", configDirectoryLabel)
 	}
 
 	return path, nil

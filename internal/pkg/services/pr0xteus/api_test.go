@@ -260,6 +260,32 @@ func TestAPIServer_ListsPoolsAndMapsAcquireErrors(t *testing.T) {
 	}
 }
 
+func TestIsCountryCode(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		country string
+		want    bool
+	}{
+		{name: "uppercase two letters", country: "DE", want: true},
+		{name: "lowercase two letters", country: "de", want: true},
+		{name: "trims surrounding space", country: " de ", want: true},
+		{name: "too short", country: "D"},
+		{name: "too long", country: "DEU"},
+		{name: "contains a digit", country: "D1"},
+		{name: "empty", country: ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, isCountryCode(tc.country))
+		})
+	}
+}
+
 func newTestAPIServer(t *testing.T) (*APIServer, *apiTestSpawner) {
 	t.Helper()
 
