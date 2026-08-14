@@ -34,7 +34,8 @@ trap 'log ERROR "command failed"' ERR
 exec > >(tee -a "$log_file") 2>&1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CELL_DIR="${SCRIPT_DIR}/../cell"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CELL_DIR="${REPO_DIR}/cell"
 CELL_TAG="${PR0XTEUS_CELL_TAG:-psyb0t/pr0xteus:cell-dev}"
 
 [[ -f "${CELL_DIR}/Dockerfile" ]] || {
@@ -49,5 +50,7 @@ if [[ "$CELL_TAG" != *@sha256:* ]]; then
 	log WARN "building a mutable local development tag"
 fi
 log INFO "building local cell image"
-docker build -t "${CELL_TAG}" -f "${CELL_DIR}/Dockerfile" "${CELL_DIR}"
+# Build from the repository root so cell/Dockerfile's COPY paths resolve the same
+# way as CI, which builds `--file cell/Dockerfile` with the repo root as context.
+docker build -t "${CELL_TAG}" -f "${CELL_DIR}/Dockerfile" "${REPO_DIR}"
 log INFO "local cell image built"

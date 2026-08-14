@@ -47,7 +47,7 @@ RUN apk add --no-cache \
         wireguard-tools=1.0.20210914-r4
 
 COPY --from=builder /build/microsocks /usr/local/bin/microsocks
-COPY entrypoint.sh /entrypoint.sh
+COPY cell/entrypoint.sh /entrypoint.sh
 RUN chmod 0755 /entrypoint.sh /usr/local/bin/microsocks
 
 # Non-root user for microsocks. wg-quick + iptables run as root
