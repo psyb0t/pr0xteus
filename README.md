@@ -124,19 +124,14 @@ private SOCKS5 consumer, and an actual egress proof.
 ## Tailscale
 
 Want the same private API from another machine without opening a host port?
-Give the installed stack its own Tailscale identity. Add these lines to
-`~/.pr0xteus/.env`:
+Give the installed stack its own Tailscale identity. Set these in
+`~/.pr0xteus/.env`, then run `pr0xteus start`:
 
 ```dotenv
 PR0XTEUS_TAILSCALE_ENABLED=true
-TS_AUTHKEY=your-tailscale-auth-key
-TS_HOSTNAME=pr0xteus
-```
-
-Then run:
-
-```bash
-pr0xteus start
+TS_AUTHKEY=tskey-auth-xxxx        # reusable or ephemeral auth key
+TS_HOSTNAME=pr0xteus              # tailnet machine name
+TS_EXTRA_ARGS=--accept-dns=false  # extra `tailscale up` flags (see below)
 ```
 
 That starts an optional sidecar in its own network namespace, waits for it to
@@ -144,8 +139,28 @@ join your tailnet, and configures Tailscale Serve to proxy
 `http://pr0xteus/v1/...` to the private controller. It exposes no host port,
 does not touch a host Tailscale client, and still requires the bearer token.
 The sidecar's tailnet state lives in `~/.pr0xteus/tailscale/state`, so it keeps
-the same identity across restarts. For Headscale, add its login argument to
-`TS_EXTRA_ARGS`.
+the same identity across restarts.
+
+**Those three values are the only ones you set.** The compose file fixes the
+rest for *kernel-mode* Tailscale — `TS_USERSPACE=false` with `NET_ADMIN`,
+`NET_RAW`, and `/dev/net/tun` — so the sidecar runs a real `tailscale0`
+interface and outbound traffic to `100.64.0.0/10` uses the sidecar's own tailnet
+identity, not the host's. `TS_STATE_DIR` is likewise fixed to the bind-mounted
+state dir above.
+
+**`TS_EXTRA_ARGS` is passed verbatim to `tailscale up`,** which is where every
+other option goes — the sidecar image has no dedicated env var for them:
+
+- **Headscale (self-hosted control server)** — point it at your server and use a
+  Headscale-issued pre-auth key:
+  ```dotenv
+  TS_AUTHKEY=<headscale-preauthkey>
+  TS_EXTRA_ARGS=--login-server=https://headscale.example.com --accept-dns=false
+  ```
+- **Tags / ACLs** — `--advertise-tags=tag:proxy`.
+- **Ephemeral node** — issue an ephemeral auth key; it deregisters on stop.
+
+Run `tailscale up --help` for the full flag set.
 
 ## Run it yourself
 
