@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.2 — 2026-08-14
+
+- Fixed the cell image build so the published multi-architecture image ships:
+  `cell/Dockerfile` copied `entrypoint.sh` relative to the wrong directory, but
+  the image is built with the repository root as its context, so the copy failed.
+  It now copies `cell/entrypoint.sh`, and the local build uses the same root
+  context as the published build.
+- Added unit tests for config-bootstrap error paths, API country-code
+  validation, and the client retry / dispatch / backoff helpers so the suite
+  clears the 90% coverage floor.
+
 ## v0.2.1 — 2026-08-14
 
 - The installer now pins the local stack to the latest tagged release instead of
