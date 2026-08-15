@@ -34,7 +34,10 @@ const (
 	secretFileMode          = 0o444
 	coverageDirectoryName   = "coverage"
 	coverageDirectoryMode   = 0o777
-	coverageOutputEnv       = "PR0XTEUS_TEST_COVERAGE_OUTPUT_DIR"
+	// coverageOutputEnv is where the servicepack coverage engine wants the
+	// controller's native covdata written; it exports this before running the
+	// tests, and we mount it into the controller container as GOCOVERDIR.
+	coverageOutputEnv = "SERVICEPACK_COVDATA_DIR"
 
 	controllerImageRepository    = "psyb0t/pr0xteus-integration"
 	controllerDockerfile         = "Dockerfile"
@@ -1071,7 +1074,10 @@ func validateCoverageOutput(repositoryRoot string) (string, error) {
 		return "", nil
 	}
 
-	coverageRoot := filepath.Join(repositoryRoot, ".cover", "controller")
+	// The servicepack coverage engine points SERVICEPACK_COVDATA_DIR at a
+	// directory under the repo's .cover tree; keep it confined there so a stray
+	// value can't make the controller write covdata anywhere on the host.
+	coverageRoot := filepath.Join(repositoryRoot, ".cover")
 	relativePath, err := filepath.Rel(coverageRoot, destination)
 	if err != nil {
 		return "", ctxerrors.Wrap(err, "resolve controller coverage output")
@@ -1079,7 +1085,7 @@ func validateCoverageOutput(repositoryRoot string) (string, error) {
 	if relativePath == "." || filepath.IsAbs(relativePath) ||
 		strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) ||
 		filepath.Base(destination) == "." {
-		return "", ctxerrors.New("controller coverage output must be a child of .cover/controller")
+		return "", ctxerrors.New("controller coverage output must be a child of .cover")
 	}
 
 	info, err := os.Stat(destination)
