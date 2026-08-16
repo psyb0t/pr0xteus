@@ -71,13 +71,16 @@ working around the integration tests.
 
 `make build` uses the pinned Go build image, installs the static-build
 requirements inside that temporary container, and writes `build/<module-tail>`
-back with your host UID/GID. It injects two values with linker flags:
+back with your host UID/GID. It injects three values with linker flags:
 
 - `main.appName` — the final segment of the module path; it sets the binary
   name and root Cobra command name;
 - `main.buildCommit` — the checked-out `HEAD` commit when available.
+- `main.buildVersion` — the exact Git tag at `HEAD`, or `dev` for an untagged
+  source build.
 
-`cmd/main.go` puts those into the global log scope as `binary` and `commit`.
+`cmd/main.go` puts those into the global log scope as `binary`, `commit`, and
+`version`.
 Build output is therefore traceable without hardcoding identity in service
 code. A source tree without a resolvable Git `HEAD` builds, but has no commit
 field to inject.
@@ -127,5 +130,5 @@ relevant full check—for example `make test`, `make lint`, and
 pre-commit hook calls `make lint && make test-coverage`, so it will repeat
 those checks during the project's normal commit flow.
 
-Read [architecture](architecture.md) for the component boundaries and where a
-change should live.
+Read [getting started](getting-started.md) for ownership boundaries and
+[architecture](architecture.md) for where a change should live.
