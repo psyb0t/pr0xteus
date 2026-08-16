@@ -242,13 +242,14 @@ trusted client ── private HTTP API ── pr0xteus ── socket proxy ─�
   SOCKS5 daemon as UID 1500.
 
 The fuller story is in [docs/architecture.md](docs/architecture.md), with
-implementation detail in [internal/README.md](internal/README.md) and
+implementation detail in [internal/README.md](internal/pkg/services/pr0xteus/README.md) and
 [cell/README.md](cell/README.md).
 
 ## Configuration
 
-All sensitive or provider-specific material lives under `~/.config/pr0xteus/`, stays
-out of Git, and stays out of Docker build contexts:
+All sensitive or provider-specific material lives under your config directory
+(`~/.config/pr0xteus/` per-user, `/etc/pr0xteus/` system-wide), stays out of
+Git, and stays out of Docker build contexts:
 
 - `secrets/wireguard/*.conf` — real WireGuard files.
 - `secrets/pools.yaml` — named pools and their approved config basenames.
@@ -457,7 +458,7 @@ scripts/    — Makefile-backed dependency and image helpers
 - [Complete setup and egress proof](docs/complete-example.md)
 - [Deployment guide](docs/deploy.md)
 - [Control API](docs/api.md)
-- [Internal control-plane detail](internal/README.md)
+- [Internal control-plane detail](internal/pkg/services/pr0xteus/README.md)
 - [Cell boot and firewall detail](cell/README.md)
 - [Changelog](CHANGELOG.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

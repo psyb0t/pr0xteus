@@ -6,7 +6,7 @@ by the supplied Compose stack.
 
 For a safe manual request and a real private-network SOCKS5 proof, follow
 [complete-example.md](complete-example.md). The handler and pool state behind
-these routes are documented in [internal/README.md](../internal/README.md).
+these routes are documented in [internal/README.md](../internal/pkg/services/pr0xteus/README.md).
 
 ## `POST /v1/proxies`
 

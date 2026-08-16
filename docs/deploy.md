@@ -8,13 +8,19 @@ and image layers.
 
 For the exact working configuration, use
 [complete-example.md](complete-example.md). For controller/cell internals, see
-[internal/README.md](../internal/README.md) and [cell/README.md](../cell/README.md).
+[internal/README.md](../internal/pkg/services/pr0xteus/README.md) and [cell/README.md](../cell/README.md).
 
 ## Install it
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
 ```
+
+This guide uses the **per-user** install (no root): the command lands in
+`~/.local/bin` and config in `~/.config/pr0xteus`. For a shared, system-wide
+stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
+`docker` group — see the [README](../README.md); the paths below then live under
+`/etc/pr0xteus` instead of `~/.config/pr0xteus`.
 
 The installer creates `~/.config/pr0xteus/`, writes the local `docker-compose.yml`,
 and adds the `pr0xteus` command. It preserves config on a later run. It creates

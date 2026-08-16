@@ -71,7 +71,7 @@ not a microservice deployment system.
 | Path | Role | Ownership after `make own` |
 | --- | --- | --- |
 | `cmd/main.go` | Process entry point and root CLI. | Framework |
-| `cmd/init.go` | Extra handlers and application hooks. | Project |
+| `cmd/init.go` (optional) | Extra handlers and application hooks. | Project |
 | `cmd/commands.go` | App-level CLI commands. | Project |
 | `internal/app/` | App lifecycle wrapper. | Framework |
 | `internal/pkg/service-manager/` | Concurrency, dependency, retry, and stop semantics. | Framework |

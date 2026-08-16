@@ -16,6 +16,8 @@ spawner.go   constrained Docker cell lifecycle
 reaper.go    idle, unhealthy, and orphan cleanup
 service.go   HTTP listeners and lifecycle wiring
 metrics.go   bounded-label Prometheus collectors
+cells.go     /v1/cells list, fetch, and delete handlers
+cellstatus.go per-cell traffic and health snapshot projection
 ```
 
 `APIServer` owns HTTP shape. `Manager` owns pool choice and synchronization.
@@ -55,14 +57,18 @@ Every spawned cell gets a dedicated name and labels:
 - `pr0xteus.managed=true`
 - `pr0xteus.pool=<logical-pool>`
 - `pr0xteus.conf=<config-basename>`
+- `pr0xteus.scope=<managed-scope>`
+- `pr0xteus.parent.id=<parent-controller-id>` (the discovery key a fresh
+  controller uses to re-adopt its own children)
 
 The labels let a fresh controller remove stale leftovers that it cannot safely
 adopt because its in-memory pool state starts cold.
 
 ## Docker hardening boundary
 
-The actual cell needs `NET_ADMIN` and `/dev/net/tun`; that is the smallest
-known capability/device set for WireGuard setup. It also gets `cap_drop=ALL`,
+The actual cell needs `NET_ADMIN`, `SETUID`, `SETGID`, and `/dev/net/tun`; that
+is the smallest known capability/device set for WireGuard setup plus `su-exec`'s
+one-way drop to an unprivileged UID. It also gets `cap_drop=ALL`,
 `no-new-privileges`, PID 1 init, log rotation, CPU/memory/PID limits, a single
 read-only config bind, and required network sysctls. It does not receive the
 Docker socket or a caller-controlled environment.

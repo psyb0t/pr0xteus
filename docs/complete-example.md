@@ -6,14 +6,19 @@ exit. You need Linux and Docker; `docker compose` is already part of Docker.
 pr0xteus does not create a VPN account or fetch provider configuration for you.
 
 For component detail, see [architecture.md](architecture.md),
-[api.md](api.md), [internal/README.md](../internal/README.md), and
+[api.md](api.md), [internal/README.md](../internal/pkg/services/pr0xteus/README.md), and
 [cell/README.md](../cell/README.md).
 
 ## 1. Install it
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
 ```
+
+This walkthrough uses the **per-user** install (no root): the command lands in
+`~/.local/bin` and config in `~/.config/pr0xteus`. For a shared, system-wide
+stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
+`docker` group — see the [README](../README.md).
 
 The installer creates `~/.config/pr0xteus/`, writes its local `docker-compose.yml`,
 and installs the `pr0xteus` command. It only creates these local files when
