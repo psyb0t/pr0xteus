@@ -54,23 +54,40 @@ there is no separate Compose install dance.
 
 ### Install it
 
+The installer works two ways. **Per-user** — no root, just for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
+```
+
+That puts the `pr0xteus` command in `~/.local/bin/` and your config in
+`~/.pr0xteus/` (owner-only). If `~/.local/bin` isn't on your `PATH` the installer
+prints the exact one-liner to add it for bash or zsh.
+
+**System-wide** — run it with `sudo` for one shared stack any docker-group user
+can drive:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-That makes `~/.pr0xteus/`, puts the local `docker-compose.yml` and starter
-config there, generates a bearer token in owner-only `.env`, and installs the
-`pr0xteus` command. No source checkout required. It pins to the **latest
-tagged release** — never `:latest` on your box — and the controller derives its
-matching cell image from that tag, so both move together only when you upgrade.
+That puts the command in `/usr/local/bin/` and the config in `/etc/pr0xteus/`
+(root-owned, readable by the `docker` group). The mode is chosen from who runs
+it — root → system-wide, otherwise per-user — and `--system` / `--user` force it.
 
-Right after installing, edit `~/.pr0xteus/.env` if you want to change the
-loopback ports, tune logging, or turn on the optional tailnet API (below) —
-everything is a plain key you edit, not a CLI flag to remember.
+Either way it drops the local `docker-compose.yml` and starter config, generates
+a bearer token in an owner-only `.env`, and installs the `pr0xteus` command. No
+source checkout required. It pins to the **latest tagged release** — never
+`:latest` on your box — and the controller derives its matching cell image from
+that tag, so both move together only when you upgrade.
+
+Right after installing, edit the `.env` in your config directory if you want to
+change the loopback ports, tune logging, or turn on the optional tailnet API
+(below) — everything is a plain key you edit, not a CLI flag to remember.
 
 Want to track `main` instead of a release? Add `--rolling` to force the moving
 `:latest` image for a single run — on the installer
-(`… | sudo bash -s -- --rolling`) or on any `pr0xteus start` / `pr0xteus upgrade`.
+(`… | bash -s -- --rolling`) or on any `pr0xteus start` / `pr0xteus upgrade`.
 
 ### Give it one WireGuard exit
 

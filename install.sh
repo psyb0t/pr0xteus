@@ -1,24 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
-# pr0xteus installer. Run with:
-#   curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+# pr0xteus installer. Two modes:
 #
-# It pins the local stack to the latest RELEASE tag (never :latest on your box),
-# runs `pr0xteus config init` to drop the compose file plus an owner-only config
-# into ~/.pr0xteus, and installs a `pr0xteus` command that wraps the usual Docker
-# commands. Pass --rolling to pin the moving :latest image instead:
-#   curl -fsSL .../install.sh | sudo bash -s -- --rolling
+#   Per-user (no root) — installs into your home, for the current user only:
+#     curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
+#     command -> ~/.local/bin/pr0xteus, config -> ~/.pr0xteus
+#
+#   System-wide (root) — one shared stack any docker-group user can drive:
+#     curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+#     command -> /usr/local/bin/pr0xteus, config -> /etc/pr0xteus
+#
+# The mode is chosen from who runs it (root -> system, otherwise per-user); pass
+# --system or --user to force it. It pins the stack to the latest RELEASE tag
+# (never :latest on your box); pass --rolling to pin the moving :latest instead.
 
 readonly INSTALL_LOG_FILE="/tmp/pr0xteus-install.log"
-readonly INSTALL_PATH="/usr/local/bin/pr0xteus"
+readonly SYSTEM_INSTALL_PATH="/usr/local/bin/pr0xteus"
+readonly SYSTEM_CONFIG_DIR="/etc/pr0xteus"
 readonly WRAPPER_MARKER="pr0xteus-managed-command"
 readonly CONFIG_DIRECTORY_NAME=".pr0xteus"
+# shellcheck disable=SC2016  # deliberately literal: $HOME/$PATH must land in the rc file unexpanded
+readonly USER_PATH_SNIPPET='export PATH="$HOME/.local/bin:$PATH"'
 readonly IMAGE_REPO="psyb0t/pr0xteus"
 readonly ROLLING_IMAGE="psyb0t/pr0xteus:latest"
 readonly GITHUB_API_LATEST="https://api.github.com/repos/psyb0t/pr0xteus/releases/latest"
 
 ROLLING=0
+MODE=""
+INSTALL_PATH=""
+TARGET_CONFIG_DIR=""
 WRAPPER_TEMPORARY_FILE=""
 
 # This is a user-facing installer, so the output is deliberately plain prose
@@ -36,30 +47,77 @@ trap 'printf "error: install failed — see %s\n" "$INSTALL_LOG_FILE" >&2' ERR
 trap 'rm -f "$WRAPPER_TEMPORARY_FILE"' EXIT
 exec > >(tee -a "$INSTALL_LOG_FILE") 2>&1
 
-require_root() {
-	if ((EUID != 0)); then
-		fail "run this installer with sudo"
+# resolve_mode fixes MODE (from --system/--user, else EUID) and the paths it
+# implies, and rejects the nonsensical combinations up front.
+resolve_mode() {
+	if [[ -z "$MODE" ]]; then
+		if ((EUID == 0)); then MODE="system"; else MODE="user"; fi
 	fi
 
-	if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
-		fail "run this through sudo from the account that will use pr0xteus"
+	case "$MODE" in
+	system)
+		((EUID == 0)) ||
+			fail "the system-wide install needs root — re-run with sudo, or use --user for a per-user install"
+		INSTALL_PATH="$SYSTEM_INSTALL_PATH"
+		TARGET_CONFIG_DIR="$SYSTEM_CONFIG_DIR"
+		;;
+	user)
+		((EUID != 0)) ||
+			fail "the per-user install must not run as root — run it as your normal account, or use --system"
+		INSTALL_PATH="$HOME/.local/bin/pr0xteus"
+		TARGET_CONFIG_DIR="$HOME/$CONFIG_DIRECTORY_NAME"
+		;;
+	*)
+		fail "unknown mode: $MODE"
+		;;
+	esac
+}
+
+# prepare_config_dir creates the config directory with mode-appropriate
+# ownership. System config is root-owned but group-readable by the docker group
+# so any docker-group operator can drive the shared stack (docker-group access
+# is already root-equivalent, so this exposes nothing new). Per-user config is
+# private (0700) to the installing user.
+prepare_config_dir() {
+	if [[ "$MODE" == "system" ]]; then
+		install -d -m 0750 "$TARGET_CONFIG_DIR"
+		if getent group docker >/dev/null 2>&1; then
+			chgrp docker "$TARGET_CONFIG_DIR"
+		fi
+
+		return
 	fi
+
+	install -d -m 0700 "$TARGET_CONFIG_DIR"
 }
 
-resolve_target_user() {
-	local account_record
+# apply_config_permissions re-asserts the sharing model after config init has
+# written files. Only meaningful for the system install.
+apply_config_permissions() {
+	[[ "$MODE" == "system" ]] || return 0
 
-	account_record="$(getent passwd "$SUDO_USER")"
-	[[ -n "$account_record" ]] || fail "could not resolve sudo user $SUDO_USER"
-
-	TARGET_HOME="$(cut -d: -f6 <<<"$account_record")"
-	TARGET_UID="$(id -u "$SUDO_USER")"
-	TARGET_GID="$(id -g "$SUDO_USER")"
-	TARGET_CONFIG_DIR="$TARGET_HOME/$CONFIG_DIRECTORY_NAME"
+	if getent group docker >/dev/null 2>&1; then
+		chgrp -R docker "$TARGET_CONFIG_DIR" || true
+	fi
+	# Group may read/traverse but never write.
+	chmod -R g-w "$TARGET_CONFIG_DIR" || true
+	find "$TARGET_CONFIG_DIR" -type d -exec chmod g+rx {} + || true
+	find "$TARGET_CONFIG_DIR" -type f -exec chmod g+r {} + || true
 }
 
-run_as_target_user() {
-	sudo -H -u "$SUDO_USER" "$@"
+# warn_user_path tells a per-user installer, in the terminal, exactly how to put
+# ~/.local/bin on PATH for both bash and zsh when it is not already there.
+warn_user_path() {
+	[[ "$MODE" == "user" ]] || return 0
+
+	case ":$PATH:" in
+	*":$HOME/.local/bin:"*) return 0 ;;
+	esac
+
+	warn "$HOME/.local/bin is not on your PATH — the pr0xteus command will not be found yet"
+	printf '\nAdd it to your shell, then restart the shell (or source the file):\n\n'
+	printf "  bash:  echo '%s' >> ~/.bashrc && source ~/.bashrc\n" "$USER_PATH_SNIPPET"
+	printf "  zsh:   echo '%s' >> ~/.zshrc && source ~/.zshrc\n\n" "$USER_PATH_SNIPPET"
 }
 
 resolve_latest_tag() {
@@ -93,23 +151,18 @@ env_pinned_image() {
 	sed -n 's/^PR0XTEUS_CONTROLLER_IMAGE=//p' "$env_file" | head -n1
 }
 
-# pin_env_image rewrites PR0XTEUS_CONTROLLER_IMAGE in an existing .env as the
-# target user. config init preserves an existing .env (writeFileIfAbsent), so an
-# upgrade re-runs config init but must re-pin the image line here itself.
+# pin_env_image rewrites PR0XTEUS_CONTROLLER_IMAGE in an existing .env. config
+# init preserves an existing .env (writeFileIfAbsent), so an upgrade re-runs
+# config init but must re-pin the image line here itself.
 pin_env_image() {
 	local env_file="$1" image="$2"
 
 	[[ -f "$env_file" ]] || return 0
-	# shellcheck disable=SC2016  # $1/$2 are expanded by the inner bash, not here — intentional
-	run_as_target_user bash -c '
-		env_file="$1"
-		image="$2"
-		if grep -q "^PR0XTEUS_CONTROLLER_IMAGE=" "$env_file"; then
-			sed -i "s|^PR0XTEUS_CONTROLLER_IMAGE=.*|PR0XTEUS_CONTROLLER_IMAGE=${image}|" "$env_file"
-		else
-			printf "PR0XTEUS_CONTROLLER_IMAGE=%s\n" "$image" >>"$env_file"
-		fi
-	' _ "$env_file" "$image"
+	if grep -q "^PR0XTEUS_CONTROLLER_IMAGE=" "$env_file"; then
+		sed -i "s|^PR0XTEUS_CONTROLLER_IMAGE=.*|PR0XTEUS_CONTROLLER_IMAGE=${image}|" "$env_file"
+	else
+		printf 'PR0XTEUS_CONTROLLER_IMAGE=%s\n' "$image" >>"$env_file"
+	fi
 }
 
 write_command() {
@@ -117,6 +170,7 @@ write_command() {
 		fail "$INSTALL_PATH already exists and is not managed by this installer"
 	fi
 
+	install -d "$(dirname "$INSTALL_PATH")"
 	WRAPPER_TEMPORARY_FILE="$(mktemp)"
 
 	cat >"$WRAPPER_TEMPORARY_FILE" <<'SCRIPT'
@@ -125,6 +179,7 @@ write_command() {
 set -euo pipefail
 
 readonly CONFIG_DIRECTORY_NAME=".pr0xteus"
+readonly SYSTEM_CONFIG_DIR="/etc/pr0xteus"
 readonly IMAGE_REPO="psyb0t/pr0xteus"
 readonly ROLLING_IMAGE="psyb0t/pr0xteus:latest"
 readonly INSTALLER_URL="https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh"
@@ -150,7 +205,7 @@ usage() {
 Usage: pr0xteus <command> [--rolling]
 
 Commands:
-  setup      Create ~/.pr0xteus (compose + config) without replacing your config
+  setup      Create the config (compose + config) without replacing your config
   start      Validate the config, pull the pinned images, and start the stack
   stop       Stop the pr0xteus stack
   status     Show the controller and socket-proxy state
@@ -161,14 +216,38 @@ Commands:
 
   --rolling  On setup/start/upgrade: use the moving :latest image for that run
              only, instead of the pinned release tag. Handy for testing main.
+
+Config location: $PR0XTEUS_HOME if set, else /etc/pr0xteus for a system-wide
+install, else ~/.pr0xteus for a per-user install.
 EOF
 }
 
+# config_directory resolves where the stack config lives: an explicit
+# PR0XTEUS_HOME wins; otherwise a system-wide install (/etc/pr0xteus) is
+# preferred when present, falling back to the per-user ~/.pr0xteus.
 config_directory() {
-    local config_dir="${PR0XTEUS_HOME:-$HOME/$CONFIG_DIRECTORY_NAME}"
+    local config_dir
+    if [[ -n "${PR0XTEUS_HOME:-}" ]]; then
+        config_dir="$PR0XTEUS_HOME"
+    elif [[ -f "$SYSTEM_CONFIG_DIR/docker-compose.yml" ]]; then
+        config_dir="$SYSTEM_CONFIG_DIR"
+    else
+        config_dir="$HOME/$CONFIG_DIRECTORY_NAME"
+    fi
 
     [[ "$config_dir" = /* ]] || fail "PR0XTEUS_HOME must be an absolute path"
     printf '%s\n' "$config_dir"
+}
+
+# root_wrap prints the sudo prefix needed to write to a config dir the current
+# user does not own (i.e. the system-wide /etc/pr0xteus). Empty for per-user.
+root_wrap() {
+    local config_dir="$1"
+    if [[ -w "$config_dir" ]]; then
+        return
+    fi
+    command -v sudo >/dev/null || fail "writing $config_dir needs root but sudo is not available"
+    printf 'sudo'
 }
 
 resolve_latest_tag() {
@@ -190,11 +269,13 @@ env_pinned_image() {
 
 env_set() {
     local config_dir="$1" key="$2" value="$3"
+    local wrap
+    wrap="$(root_wrap "$config_dir")"
 
     if grep -q "^${key}=" "$config_dir/.env"; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$config_dir/.env"
+        $wrap sed -i "s|^${key}=.*|${key}=${value}|" "$config_dir/.env"
     else
-        printf '%s=%s\n' "$key" "$value" >>"$config_dir/.env"
+        $wrap bash -c 'printf "%s=%s\n" "$1" "$2" >>"$3"' _ "$key" "$value" "$config_dir/.env"
     fi
 }
 
@@ -265,23 +346,33 @@ compose() {
 }
 
 setup() {
-    local config_dir image
-
+    local config_dir image wrap owner
     config_dir="$(config_directory)"
-    mkdir -p "$config_dir"
-    chmod 700 "$config_dir"
+    wrap="$(root_wrap "$config_dir")"
+    # System config (sudo-wrapped /etc) is root-owned then group-shared; per-user
+    # config is owned by the current user so they can edit it.
+    if [[ -n "$wrap" ]]; then owner="0:0"; else owner="$(id -u):$(id -g)"; fi
+
+    $wrap mkdir -p "$config_dir"
     image="$(controller_image "$config_dir")"
 
     say "pulling $image"
     docker pull "$image"
     say "writing config into $config_dir"
-    docker run --rm \
-        --user "$(id -u):$(id -g)" \
+    $wrap docker run --rm \
+        --user "$owner" \
         -v "$config_dir:/config" \
         "$image" config init \
         --config-dir /config \
         --host-config-dir "$config_dir" \
         --controller-image "$image"
+
+    # Keep the shared-stack model when setup re-runs against system config.
+    if [[ -n "$wrap" ]] && getent group docker >/dev/null 2>&1; then
+        $wrap chgrp -R docker "$config_dir" || true
+        $wrap find "$config_dir" -type d -exec chmod g+rx {} + || true
+        $wrap find "$config_dir" -type f -exec chmod g+r {} + || true
+    fi
 
     # config init preserves an existing .env; re-pin so the recorded image
     # always matches what we just pulled.
@@ -291,13 +382,11 @@ setup() {
 
 check_config() {
     local config_dir image
-
     config_dir="$(config_directory)"
     image="$(controller_image "$config_dir")"
     [[ -f "$config_dir/docker-compose.yml" ]] || fail "run pr0xteus setup first"
 
     docker run --rm \
-        --user "$(id -u):$(id -g)" \
         -v "$config_dir:/config:ro" \
         "$image" config check --config-dir /config
 }
@@ -331,7 +420,6 @@ wire_tailscale_serve() {
 
 start() {
     local config_dir image
-
     config_dir="$(config_directory)"
     check_config
     image="$(controller_image "$config_dir")"
@@ -347,21 +435,18 @@ start() {
 
 stop() {
     local config_dir
-
     config_dir="$(config_directory)"
     compose "$config_dir" down
 }
 
 status() {
     local config_dir
-
     config_dir="$(config_directory)"
     compose "$config_dir" ps
 }
 
 show_logs() {
     local config_dir
-
     config_dir="$(config_directory)"
     compose "$config_dir" logs "$@"
 }
@@ -397,9 +482,14 @@ upgrade() {
     compose "$config_dir" up --detach
     compose "$config_dir" ps
 
-    # Refresh the wrapper itself from the new installer (self-update).
+    # Refresh the wrapper itself from the new installer (self-update), re-running
+    # in the same mode this install used.
     say "refreshing the installer + wrapper"
-    curl -fsSL "$INSTALLER_URL" | sudo bash
+    if [[ "$config_dir" == "$SYSTEM_CONFIG_DIR" ]]; then
+        curl -fsSL "$INSTALLER_URL" | sudo bash -s -- --system
+    else
+        curl -fsSL "$INSTALLER_URL" | bash -s -- --user
+    fi
 
     # Reclaim space: drop the previous image once the new one is running.
     if [[ -n "$old_image" && "$old_image" != "$new_image" ]]; then
@@ -412,8 +502,9 @@ upgrade() {
 }
 
 uninstall() {
-    local config_dir answer delete_data=0
+    local config_dir answer delete_data=0 cmd_path wrap
     config_dir="$(config_directory)"
+    wrap="$(root_wrap "$config_dir")"
 
     read -r -p "Also delete your data ($config_dir and its Docker volumes)? [y/N] " answer
     case "$answer" in
@@ -431,11 +522,17 @@ uninstall() {
         fi
     fi
 
-    say "removing the pr0xteus command (needs sudo)"
-    sudo rm -f /usr/local/bin/pr0xteus
+    cmd_path="$(command -v pr0xteus 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+    say "removing the pr0xteus command ($cmd_path)"
+    if [[ -w "$(dirname "$cmd_path")" ]]; then
+        rm -f "$cmd_path"
+    else
+        command -v sudo >/dev/null || fail "removing $cmd_path needs root but sudo is not available"
+        sudo rm -f "$cmd_path"
+    fi
 
     if ((delete_data)); then
-        rm -rf -- "$config_dir"
+        $wrap rm -rf -- "$config_dir"
         say "deleted $config_dir and its volumes"
     else
         say "kept your data at $config_dir"
@@ -483,27 +580,33 @@ main() {
 	for arg in "$@"; do
 		case "$arg" in
 		--rolling) ROLLING=1 ;;
-		*) fail "unknown argument: $arg (only --rolling is supported)" ;;
+		--system) MODE="system" ;;
+		--user) MODE="user" ;;
+		*) fail "unknown argument: $arg (supported: --system, --user, --rolling)" ;;
 		esac
 	done
 
-	require_root
-	resolve_target_user
+	resolve_mode
 
-	run_as_target_user docker info >/dev/null ||
-		fail "the account $SUDO_USER cannot talk to Docker — is the daemon running and is the user in the docker group?"
-	install -d -m 0700 -o "$TARGET_UID" -g "$TARGET_GID" "$TARGET_CONFIG_DIR"
+	docker info >/dev/null 2>&1 ||
+		fail "cannot talk to Docker — is the daemon running, and (per-user) is your account in the docker group?"
+
+	say "installing pr0xteus ($MODE mode)"
+	prepare_config_dir
 
 	local previous_image image
 	previous_image="$(env_pinned_image "$TARGET_CONFIG_DIR/.env")"
 	image="$(resolve_controller_image)"
 
 	say "pinning to $image"
-	run_as_target_user docker pull "$image"
+	docker pull "$image"
 
-	say "writing local configuration into $TARGET_CONFIG_DIR"
-	run_as_target_user docker run --rm \
-		--user "$TARGET_UID:$TARGET_GID" \
+	# --user makes config init write files owned by the installing identity: the
+	# current user in per-user mode, root (EUID 0) in system mode. System files
+	# are then group-shared by apply_config_permissions below.
+	say "writing configuration into $TARGET_CONFIG_DIR"
+	docker run --rm \
+		--user "$(id -u):$(id -g)" \
 		-v "$TARGET_CONFIG_DIR:/config" \
 		"$image" config init \
 		--config-dir /config \
@@ -513,17 +616,19 @@ main() {
 	# config init preserves an existing .env, so re-pin the image line for the
 	# upgrade case where the .env already existed.
 	pin_env_image "$TARGET_CONFIG_DIR/.env" "$image"
+	apply_config_permissions
 	write_command
+	warn_user_path
 
 	if [[ -n "$previous_image" && "$previous_image" != "$image" ]]; then
-		if run_as_target_user docker image rm "$previous_image" >/dev/null 2>&1; then
+		if docker image rm "$previous_image" >/dev/null 2>&1; then
 			say "removed the previous image $previous_image"
 		else
 			warn "kept the previous image $previous_image (still in use)"
 		fi
 	fi
 
-	printf '\npr0xteus is installed (pinned to %s).\n\n' "$image"
+	printf '\npr0xteus is installed in %s mode (pinned to %s).\n\n' "$MODE" "$image"
 	printf '  Config lives in:  %s\n' "$TARGET_CONFIG_DIR"
 	printf '  Command lives in: %s\n\n' "$INSTALL_PATH"
 	printf 'Put an authorized WireGuard .conf file in:\n'
