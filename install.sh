@@ -208,6 +208,7 @@ Commands:
   setup      Create the config (compose + config) without replacing your config
   start      Validate the config, pull the pinned images, and start the stack
   stop       Stop the pr0xteus stack
+  restart    Restart the stack
   status     Show the controller and socket-proxy state
   logs       Follow logs; pass any extra `docker compose logs` arguments
   upgrade    Re-pin to the latest release, pull it, and drop the previous image
@@ -446,6 +447,11 @@ stop() {
     compose "$config_dir" down
 }
 
+restart() {
+    stop
+    start
+}
+
 status() {
     local config_dir
     config_dir="$(config_directory)"
@@ -579,6 +585,7 @@ main() {
     setup) setup ;;
     start) start ;;
     stop) stop ;;
+    restart) restart ;;
     status) status ;;
     logs) show_logs "${rest[@]}" ;;
     upgrade) upgrade ;;

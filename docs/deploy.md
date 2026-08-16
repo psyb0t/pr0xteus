@@ -116,12 +116,13 @@ beyond an authenticated private boundary.
 ```bash
 pr0xteus status
 pr0xteus logs --tail=200
+pr0xteus restart
 pr0xteus upgrade
 pr0xteus start
 ```
 
-The controller and socket proxy use capped JSON logs. For configuration or
-provider changes, run `pr0xteus start`; it checks config before starting.
+The controller and socket proxy use capped JSON logs. Use `pr0xteus restart`
+to restart the stack. For configuration or provider changes, use either command.
 
 Source checkout is development-only. Its Makefile runs format, lint, and all
 tests in the development container; it is not required to operate the image.

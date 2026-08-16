@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.1 — 2026-08-16
+
+- Added `pr0xteus restart` to the installed command. It stops the stack and
+  starts it again through the normal validation path.
+
 ## v0.7.0 — 2026-08-16
 
 - **Control API collections are now consistent.** `GET /v1/proxies`,

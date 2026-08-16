@@ -132,6 +132,7 @@ stay on `http://127.0.0.1:9091`. Useful commands are deliberately boring:
 pr0xteus status
 pr0xteus logs --follow
 pr0xteus stop
+pr0xteus restart     # restart the stack
 pr0xteus upgrade     # re-pin to the newest release, pull it, drop the old image
 pr0xteus uninstall   # stop the stack, remove the command, ask before deleting data
 ```

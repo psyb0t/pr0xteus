@@ -87,7 +87,8 @@ versioned cell. Do not set `PR0XTEUS_CELL_IMAGE` unless an operator explicitly
 needs an override; that override must contain an immutable digest.
 
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
-commands: `pr0xteus stop`, `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
+commands: `pr0xteus stop`, `pr0xteus restart`,
+`pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
 (refreshes `.env.example`, re-pins to the newest release, and drops the old
 image), and `pr0xteus uninstall` (prompts before deleting
 `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade` to use the moving

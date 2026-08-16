@@ -80,8 +80,8 @@ curl --fail --silent http://127.0.0.1:9091/healthz
 ```
 
 `pr0xteus start` checks the token, bundle, pools, and routing before it pulls
-images or starts anything. `pr0xteus status`, `pr0xteus logs --follow`, and
-`pr0xteus stop` are the normal day-to-day commands.
+images or starts anything. `pr0xteus status`, `pr0xteus logs --follow`,
+`pr0xteus stop`, and `pr0xteus restart` are the normal day-to-day commands.
 
 The controller API is `127.0.0.1:8000`; metrics and health are
 `127.0.0.1:9091`. Cells have no host port. They join the private egress network
