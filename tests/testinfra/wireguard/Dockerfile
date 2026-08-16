@@ -7,7 +7,7 @@ RUN apk add --no-cache \
 	iproute2=6.9.0-r0 \
 	wireguard-tools=1.0.20210914-r4
 
-COPY tests/testinfra/.fixtures/wireguard/entrypoint.sh /entrypoint.sh
+COPY tests/testinfra/wireguard/entrypoint.sh /entrypoint.sh
 RUN chmod 0755 /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -42,7 +42,7 @@ const (
 	controllerImageRepository    = "psyb0t/pr0xteus-integration"
 	controllerDockerfile         = "Dockerfile"
 	controllerCoverageDockerfile = "Dockerfile.integration"
-	peerDockerfile               = "tests/testinfra/.fixtures/wireguard/Dockerfile"
+	peerDockerfile               = "tests/testinfra/wireguard/Dockerfile"
 	cellImage                    = "psyb0t/pr0xteus:cell-dev"
 	curlImage                    = "curlimages/curl@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17"
 

@@ -365,9 +365,9 @@ make build-cell    # WireGuard + cellproxy image
 
 `make test-api` (and the broader `make test-integration`) use Testcontainers to
 build and start the **production** controller image, a self-contained WireGuard
-peer container (built from the fixture at
-[`tests/testinfra/.fixtures/wireguard/`](tests/testinfra/.fixtures/wireguard/)),
-the cell image, and a sibling SOCKS5 client on an isolated Docker network. The
+peer container (built from
+[`tests/testinfra/wireguard/`](tests/testinfra/wireguard/)), the cell image, and
+a sibling SOCKS5 client on an isolated Docker network. The
 API test drives every control-plane route over real HTTP and proves that SOCKS5
 traffic traverses the WireGuard tunnel to a private test HTTP server on the peer.
 It needs no provider account, real WireGuard bundle, host port, or persistent
