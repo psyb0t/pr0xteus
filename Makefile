@@ -8,6 +8,7 @@ DEV_IMAGE := pr0xteus-dev
 MIN_TEST_COVERAGE := 90
 COVERAGE_DIRECTORY := .cover
 INTEGRATION_TEST_LOG := $(COVERAGE_DIRECTORY)/test-integration.log
+API_TEST_LOG := $(COVERAGE_DIRECTORY)/test-api.log
 REAL_TEST_LOG := $(COVERAGE_DIRECTORY)/test-real.log
 
 include Makefile.servicepack
@@ -29,7 +30,7 @@ DEV_RUN_DIND_INTEGRATION := docker run --rm --init \
 	-w "$(CURDIR)" \
 	$(DEV_IMAGE)
 
-.PHONY: test-real docker-build build-cell run config-init config-check audit-compose
+.PHONY: test-api test-real docker-build build-cell run config-init config-check audit-compose
 
 format: dev-image ## Format Go and shell source in the development container
 	@$(DEV_RUN) bash -ceu 'go tool gofumpt -w .; shfmt -w install.sh $$(find cell scripts -type f -name "*.sh")'
@@ -48,6 +49,13 @@ test-unit: dev-image ## Run the race-enabled unit suite in the development conta
 
 test-integration: dev-image build-cell ## Run the WireGuard plus SOCKS5 Testcontainers suite
 	@$(DEV_RUN_DIND_INTEGRATION) bash -ceu 'mkdir -p $(COVERAGE_DIRECTORY); go test -tags=integration -race -count=1 -timeout=600s ./tests/... 2>&1 | tee $(INTEGRATION_TEST_LOG)'
+
+# test-api builds pr0xteus from its production Dockerfile in Testcontainers,
+# stands up a self-contained WireGuard peer container (no external provider),
+# and drives every control-plane route over real HTTP. This is the API contract
+# test; make test-real is the only one that uses a real Surfshark egress.
+test-api: dev-image build-cell ## Build pr0xteus from its Dockerfile in Testcontainers and hit every HTTP route
+	@$(DEV_RUN_DIND_INTEGRATION) bash -ceu 'mkdir -p $(COVERAGE_DIRECTORY); go test -tags=integration -race -count=1 -timeout=600s ./tests/controlapi 2>&1 | tee $(API_TEST_LOG)'
 
 test-real: dev-image build-cell ## Opt-in real Surfshark egress smoke test
 	@PR0XTEUS_REAL_TEST_ENABLED=true $(DEV_RUN_DIND_INTEGRATION) bash -ceu 'mkdir -p $(COVERAGE_DIRECTORY); go test -tags=integration,real -race -count=1 -timeout=600s ./tests/real 2>&1 | tee $(REAL_TEST_LOG)'

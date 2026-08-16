@@ -354,32 +354,32 @@ make help          # every supported operation
 make format        # gofumpt + shfmt
 make lint          # Go, shell, and format checks
 make test          # unit tests plus a real Testcontainers WireGuard/SOCKS5 stack
+make test-api      # build pr0xteus from its Dockerfile in Testcontainers, hit every route
 make test-real     # opt-in real Surfshark allocation and public-IP egress proof
-make test-coverage # runs all test packages and requires 90% production coverage
+make test-coverage # gate every package at 90% (servicepack coverage engine)
 make audit         # govulncheck
 make audit-compose # Compose safety checks
 make build         # controller image
 make build-cell    # WireGuard + cellproxy image
 ```
 
-`make test-integration` uses Testcontainers to build and start the production
-controller, a real WireGuard peer, the production cell image, and a sibling
-SOCKS5 client on an isolated Docker network. It allocates a proxy through the
-real API and proves that SOCKS5 traffic traverses the WireGuard tunnel to a
-private test HTTP server. It needs no provider account, real WireGuard bundle,
-host port, or persistent container; Testcontainers tears down only the exact
-resources it created.
+`make test-api` (and the broader `make test-integration`) use Testcontainers to
+build and start the **production** controller image, a self-contained WireGuard
+peer container (built from the fixture at
+[`tests/testinfra/.fixtures/wireguard/`](tests/testinfra/.fixtures/wireguard/)),
+the cell image, and a sibling SOCKS5 client on an isolated Docker network. The
+API test drives every control-plane route over real HTTP and proves that SOCKS5
+traffic traverses the WireGuard tunnel to a private test HTTP server on the peer.
+It needs no provider account, real WireGuard bundle, host port, or persistent
+container, and Testcontainers tears down only the exact resources it created.
 
-`make test-coverage` runs `go test -tags=integration -race ./...`, so it
-executes unit tests and every Testcontainers package, including `tests/*_test.go`.
-Its 90% gate measures pr0xteus production code only
-(`internal/pkg/services/pr0xteus` and `pkg/client`): Go does execute test
-source, but does not treat `_test.go` files as coverable production code. The
-fixture exports native coverage from its test-only controller image into
-ignored `.cover/` storage and merges it with the test profile, so the reported
-number includes the real controller process instead of only test binaries.
-Normal integration runs keep using `Dockerfile`, the production controller
-image.
+`make test-coverage` runs the servicepack coverage engine over
+`go test -tags=integration ./...` with `-coverpkg=<module>/...`, so **every**
+package is gated at 90% — the controller service included, via native coverage
+data merged from the real controller container (test runs swap in a `-cover`
+image; normal `test-api`/`test-integration` runs use the production `Dockerfile`).
+It excludes only non-hand-written code under test: `cmd/` mains, the `tests/`
+harness, generated code, and mocks.
 
 `make test-real` is deliberately separate from `make test` and CI. It loads
 the ignored local Surfshark bundle at `secrets/wg/surfshark-wireguard/` with
