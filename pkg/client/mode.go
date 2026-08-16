@@ -5,9 +5,10 @@ type Mode int
 
 const (
 	// ModeVPNOnly forces every request through pr0xteus's SOCKS5
-	// proxy. Direct dials are refused at the transport level
-	// (ErrDirectDialForbidden). Default for any consumer where
-	// the host's public IP must NEVER touch the target.
+	// proxy. The transport it builds simply has no direct-dial
+	// code path — there is nothing for a request to escape
+	// through. Default for any consumer where the host's public IP
+	// must NEVER touch the target.
 	ModeVPNOnly Mode = iota
 
 	// ModePublicFirst tries the host's direct internet first;

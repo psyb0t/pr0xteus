@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/psyb0t/aichteeteapee"
 	"github.com/psyb0t/ctxerrors"
 )
 
@@ -191,8 +192,13 @@ func (c *TunnelPoolClient) executeProxyRequest(req *http.Request) ([]byte, error
 	statusOK := resp.StatusCode >= http.StatusOK &&
 		resp.StatusCode < http.StatusMultipleChoices
 	if !statusOK {
+		sentinel := ErrEgressUnavailable
+		if isPoolExhaustedResponse(resp.StatusCode, body) {
+			sentinel = ErrPoolExhausted
+		}
+
 		return nil, ctxerrors.Wrapf(
-			ErrEgressUnavailable,
+			sentinel,
 			"pr0xteus %s returned %d: %s",
 			endpoint, resp.StatusCode,
 			truncateBody(string(body), truncateBodyAt),
@@ -200,6 +206,29 @@ func (c *TunnelPoolClient) executeProxyRequest(req *http.Request) ([]byte, error
 	}
 
 	return body, nil
+}
+
+// isPoolExhaustedResponse detects pr0xteus's pool-exhausted response so the
+// caller can fail fast (see retry.go shouldRetry) instead of retrying
+// through the full backoff staircase. The server's writeAcquireError
+// (internal/pkg/services/pr0xteus/api.go) maps BOTH its ErrPoolExhausted and
+// ErrPoolUnavailable sentinels to the identical 503 status and
+// aichteeteapee.ErrorResponseServiceUnavailable envelope — the two are
+// indistinguishable on the wire. This client only exposes ErrPoolExhausted
+// (see errors.go), so any response matching that shape maps there; that
+// matches the documented pool contract ("May return ErrPoolExhausted when
+// every option has been tried", pool.go).
+func isPoolExhaustedResponse(statusCode int, body []byte) bool {
+	if statusCode != http.StatusServiceUnavailable {
+		return false
+	}
+
+	var envelope aichteeteapee.ErrorResponse
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+
+	return envelope.Code == aichteeteapee.ErrorCodeServiceUnavailable
 }
 
 // parseTunnelPoolResponse decodes the wire JSON + lifts URL + Pool

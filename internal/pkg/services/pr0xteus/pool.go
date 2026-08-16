@@ -361,6 +361,13 @@ func (p *PoolState) setTunnel(t *Tunnel) {
 	defer p.mu.Unlock()
 
 	p.tunnel = t
+
+	hot := 0.0
+	if t != nil {
+		hot = 1
+	}
+
+	TunnelHotGauge.WithLabelValues(p.Spec.Name).Set(hot)
 }
 
 // acquire returns the hot tunnel and atomically increments its
@@ -621,6 +628,8 @@ func (m *Manager) spawnFromState(
 	spawnCtx, cancel := context.WithTimeout(ctx, m.cfg.SpawnTimeout)
 	defer cancel()
 
+	spawnStart := time.Now()
+
 	tunnel, spawnErr := m.spawner.Spawn(spawnCtx, SpawnRequest{
 		Pool:        state.Spec.Name,
 		ConfName:    conf,
@@ -628,6 +637,13 @@ func (m *Manager) spawnFromState(
 		BundleDir:   m.cfg.BundleDir,
 	})
 	if spawnErr != nil {
+		outcome := metricOutcomeSpawnFail
+		if errors.Is(spawnErr, ErrSpawnTimeout) {
+			outcome = metricOutcomeTimeout
+		}
+
+		TunnelSpawnsTotal.WithLabelValues(state.Spec.Name, outcome).Inc()
+
 		state.markFailed(conf, time.Now())
 		ctxscope.GetLogger(ctx).Warn(
 			"pool cell spawn failed",
@@ -643,13 +659,20 @@ func (m *Manager) spawnFromState(
 		)
 	}
 
+	TunnelSpawnsTotal.WithLabelValues(state.Spec.Name, metricOutcomeSuccess).Inc()
+	TunnelSpawnDuration.WithLabelValues(state.Spec.Name).
+		Observe(time.Since(spawnStart).Seconds())
+
 	tunnel.Pool = state.Spec.Name
 	tunnel.State = TunnelStateHot
 	tunnel.InFlight = 1
 	tunnel.LastUsedAt = time.Now()
-	state.setTunnel(tunnel)
 
+	// Copy before publishing: once setTunnel stores the pointer as p.tunnel, a
+	// concurrent acquire can mutate it under p.mu, so dereferencing *tunnel
+	// after the publish would be an unsynchronized read (a -race finding).
 	tunnelCopy := *tunnel
+	state.setTunnel(tunnel)
 
 	return Acquisition{
 		Tunnel: &tunnelCopy,

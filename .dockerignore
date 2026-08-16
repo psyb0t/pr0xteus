@@ -8,6 +8,8 @@
 .integration-work
 .anustimes
 .refactor
+.brutal_reviews
+.rule_audits
 AGENTS.md
 CODEX.local.md
 *.md
@@ -17,6 +19,9 @@ CODEX.local.md
 coverage.*
 coverage-percent.txt
 profile.out
+.backup
+.cover/
+htmlcov/
 bin/
 dist/
 .env

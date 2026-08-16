@@ -127,5 +127,5 @@ relevant full check—for example `make test`, `make lint`, and
 pre-commit hook calls `make lint && make test-coverage`, so it will repeat
 those checks during the project's normal commit flow.
 
-Read [getting started](getting-started.md) for ownership boundaries and
-[architecture](architecture.md) for where a change should live.
+Read [architecture](architecture.md) for the component boundaries and where a
+change should live.

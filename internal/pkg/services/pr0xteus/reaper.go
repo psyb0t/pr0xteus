@@ -126,7 +126,7 @@ func (r *Reaper) reapOrphans(ctx context.Context) {
 		keep[t.ContainerID] = struct{}{}
 	}
 
-	count, err := gs.ReapOrphans(ctx, keep)
+	count, err := gs.ReapOrphans(ctx, keep, true)
 	if err != nil {
 		logger.Warn("orphan reap failed", "err", err)
 
@@ -356,6 +356,7 @@ func (r *Reaper) killTunnel(
 	}
 
 	state.setTunnel(nil)
+	TunnelReapsTotal.WithLabelValues(pool, reason).Inc()
 
 	logger.Info(
 		"tunnel reaped",

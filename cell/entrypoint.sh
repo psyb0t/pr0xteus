@@ -6,20 +6,30 @@
 #   1. Verify sysctls were passed via docker --sysctl. We do NOT try
 #      to write /proc/sys ourselves; docker only exposes the
 #      container's net.* namespace as read-only.
-#   2. Iptables default-DROP on every chain. Nothing escapes before
-#      the tunnel is up.
-#   3. Allow loopback + conntrack ESTABLISHED.
-#   4. Resolve Endpoint hostname → IP via the HOST resolver (DNS
-#      hasn't been switched yet). Add a /32 route via eth0 for that
-#      IP so the WG handshake doesn't go back through wg0 (loop).
+#      Then parse wg0.conf and resolve the Endpoint hostname → IP via
+#      the HOST resolver. This resolution necessarily runs BEFORE the
+#      kill-switch: we can't pin the endpoint route without the IP,
+#      and it's safe because no proxy listener exists yet — only this
+#      bootstrap lookup leaves the box, never user/proxied traffic.
+#   2. Iptables default-DROP on every chain — the kill-switch. From
+#      here nothing escapes except the pinned WireGuard endpoint.
+#   3. Allow loopback + conntrack ESTABLISHED,RELATED.
+#   4. Allow the handshake out to the endpoint IP/port on eth0 and pin
+#      a /32 route via eth0 so the handshake doesn't loop back through
+#      wg0 (the tunnel it is establishing).
 #   5. Bring up wg0 with `ip link` + `wg setconf` directly (NOT
-#      wg-quick — wg-quick insists on sysctl writes that fail).
-#   6. Allow all on wg0; allow handshake to the endpoint IP/port.
-#   7. Open the SOCKS5 port on eth0 for the configured Docker network.
+#      wg-quick — wg-quick insists on sysctl writes that fail), then
+#      wait for a real handshake before proceeding.
+#   6. Allow egress OUT via wg0. Return traffic is already covered by
+#      ESTABLISHED,RELATED; wg0 never accepts a NEW inbound connection,
+#      so cellproxy's SOCKS5 + control ports stay unreachable from the
+#      tunnel (egress) side.
+#   7. Accept new inbound for the SOCKS5 + control ports on eth0 only
+#      (the docker network the controller shares).
 #   8. Switch /etc/resolv.conf to the WG-supplied DNS.
-#   9. Drop privileges and start microsocks.
+#   9. Drop privileges and start cellproxy.
 #
-# Signal handler kills microsocks + tears down wg0 cleanly so the
+# Signal handler kills cellproxy + tears down wg0 cleanly so the
 # orchestrator's reaper doesn't leave half-up kernel state behind.
 
 set -euo pipefail
@@ -213,14 +223,19 @@ wait_for_handshake() {
 
 wait_for_handshake
 
-# ─── 6. Allow everything on wg0 ─────────────────────────────────
+# ─── 6. Allow egress OUT via the tunnel ─────────────────────────
+# OUTPUT via wg0 only. We deliberately do NOT add a blanket
+# `-A INPUT -i wg0 -j ACCEPT`: return traffic for the proxy's own
+# outbound flows is already covered by the ESTABLISHED,RELATED accept
+# above, and accepting NEW inbound on wg0 would expose cellproxy's
+# SOCKS5 + control ports to the tunnel (egress) side — the VPN peer or
+# provider. New inbound is accepted only on eth0, below.
 iptables -A OUTPUT -o wg0 -j ACCEPT
-iptables -A INPUT -i wg0 -j ACCEPT
 
 # ─── 7. Inbound SOCKS5 + control HTTP from the docker network ──
-# Both listen on eth0 (the cell network the controller shares); the
-# tunnel side (wg0) never accepts inbound, so the control server is
-# reachable only by the controller, never the egress peer.
+# Both listen on eth0 (the cell network the controller shares). This is
+# the ONLY chain that accepts a new inbound connection, so the control
+# server is reachable only by the controller, never the egress peer.
 iptables -A INPUT -i "${EGRESS_IF}" \
 	-p tcp --dport "${SOCKS5_PORT}" -j ACCEPT
 iptables -A INPUT -i "${EGRESS_IF}" \

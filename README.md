@@ -139,7 +139,7 @@ pr0xteus uninstall   # stop the stack, remove the command, ask before deleting d
 previous image so dangling layers don't pile up; `uninstall` only deletes your
 `~/.config/pr0xteus` data and volumes if you say yes at the prompt.
 
-The [complete example](docs/complete-example.md) shows an allocation, a
+The [complete example](#complete-example) below shows an allocation, a
 private SOCKS5 consumer, and an actual egress proof.
 
 ## Tailscale
@@ -219,11 +219,47 @@ Tailscale command too.
 
 ## Complete example
 
-The [operator walkthrough](docs/complete-example.md) starts with the installer,
-maps a real WireGuard file into a logical country pool, starts the private
-stack, then proves a transient consumer actually exits through its returned
-SOCKS5 URL. It also covers replacing a bad allocation and why a health check
-is not a live-tunnel check.
+[Quick start](#quick-start) got the stack running. Here is the payoff:
+allocate one exit and prove traffic actually leaves through it. Read the token
+straight from `.env` so it never lands in your shell history or an argument
+list:
+
+```bash
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
+auth=(--header @<(printf 'Authorization: Bearer %s' "$token"))
+
+# Ask for a US exit. The URL comes back only after the cell finishes its
+# WireGuard handshake wait and opens its SOCKS5 listener.
+proxy_url="$(
+  curl --fail-with-body "${auth[@]}" \
+    --header 'Content-Type: application/json' \
+    --data '{"country":"US"}' \
+    http://127.0.0.1:8000/v1/proxies | jq -er '.url'
+)"
+echo "$proxy_url"    # socks5://pr0xteus-tunnel-us-123:1080
+```
+
+That `socks5://` URL is Docker-network plumbing — it resolves on the internal
+`pr0xteus-egress` network, not from your host shell, and is meant to fail if
+you point host curl at it. Prove it works from a throwaway container on that
+network:
+
+```bash
+docker run --rm --network pr0xteus-egress \
+  curlimages/curl --fail --silent --show-error \
+  --proxy "$proxy_url" https://api.ipify.org
+
+unset token proxy_url; unset -a auth
+```
+
+That prints the public IP the world sees for that cell — your configured exit
+country, not your host. Use only providers and targets you are authorized to
+use; the IP echo is a smoke check, not something pr0xteus depends on.
+
+The [full walkthrough](docs/complete-example.md) runs this from a clean
+install and adds the parts a README should not carry: swapping out a bad
+allocation, and why a green `/healthz` is not proof a tunnel can be allocated
+right now.
 
 ## How it is wired
 
@@ -377,7 +413,8 @@ make test-real     # opt-in real Surfshark allocation and public-IP egress proof
 make test-coverage # gate every package at 90% (servicepack coverage engine)
 make audit         # govulncheck
 make audit-compose # Compose safety checks
-make build         # controller image
+make build         # static controller binary (./build)
+make docker-build  # hardened production controller image
 make build-cell    # WireGuard + cellproxy image
 ```
 

@@ -159,6 +159,86 @@ func TestManager_UsesOneSpawnForConcurrentSamePoolAcquisitions(t *testing.T) {
 	assert.Len(t, spawner.requests(), 1)
 }
 
+// TestManager_SpawnedAcquisitionTunnelIsIndependentCopy guards the -race fix
+// in spawnFromState: the Acquisition handed back to the caller must be a
+// standalone copy, never the pool's shared *Tunnel, or a concurrent acquire
+// mutating the pool's tunnel under its own mutex would race the caller's
+// unsynchronized read of the same pointer.
+func TestManager_SpawnedAcquisitionTunnelIsIndependentCopy(t *testing.T) {
+	t.Parallel()
+
+	spawner := &runtimeTestSpawner{}
+	manager := newRuntimeTestManager(spawner, map[string]PoolSpec{
+		"primary": runtimePoolSpec("primary", "de-berlin"),
+	}, map[string]string{"de": "primary"})
+
+	first, err := manager.AcquireForCountry(context.Background(), "DE", nil, false)
+	require.NoError(t, err)
+	require.NotNil(t, first.Tunnel)
+	assert.Equal(t, 1, first.Tunnel.InFlight)
+
+	state := manager.Pools()["primary"]
+	state.mu.Lock()
+	poolTunnelPtr := state.tunnel
+	state.mu.Unlock()
+	require.NotNil(t, poolTunnelPtr)
+	assert.NotSame(t, poolTunnelPtr, first.Tunnel)
+
+	second, err := manager.AcquireForCountry(context.Background(), "DE", nil, false)
+	require.NoError(t, err)
+	require.NotNil(t, second.Tunnel)
+
+	assert.Equal(
+		t, 1, first.Tunnel.InFlight,
+		"the first caller's copy must not observe a later in-flight bump",
+	)
+	assert.Equal(t, 2, second.Tunnel.InFlight)
+}
+
+// TestManager_ConcurrentAcquisitionsReturnIndependentTunnelCopies exercises
+// the same guarantee under actual goroutine concurrency + -race: each
+// caller mutates only its own returned copy.
+func TestManager_ConcurrentAcquisitionsReturnIndependentTunnelCopies(t *testing.T) {
+	t.Parallel()
+
+	spawnGate := make(chan struct{})
+	spawner := &runtimeTestSpawner{spawnGate: spawnGate}
+	manager := newRuntimeTestManager(spawner, map[string]PoolSpec{
+		"primary": runtimePoolSpec("primary", "de-berlin"),
+	}, map[string]string{"de": "primary"})
+
+	type result struct {
+		acquisition Acquisition
+		err         error
+	}
+	results := make(chan result, 2)
+
+	for range 2 {
+		go func() {
+			acquisition, err := manager.AcquireForCountry(
+				context.Background(), "DE", nil, false,
+			)
+			results <- result{acquisition: acquisition, err: err}
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		return len(spawner.requests()) == 1
+	}, time.Second, 10*time.Millisecond)
+	close(spawnGate)
+
+	for range 2 {
+		outcome := <-results
+		require.NoError(t, outcome.err)
+		require.NotNil(t, outcome.acquisition.Tunnel)
+
+		// Mutating the caller-local copy directly must never race the pool's
+		// own concurrent writes to its shared tunnel.
+		outcome.acquisition.Tunnel.InFlight = -1
+		manager.Release(outcome.acquisition)
+	}
+}
+
 func TestManager_UsesConfiguredFallbackAfterPrimarySpawnFailure(t *testing.T) {
 	t.Parallel()
 

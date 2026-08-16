@@ -170,6 +170,7 @@ make test
 make lint
 ```
 
-`make config-init` and `make run` are development conveniences. They use
-`docker-compose.yml` plus `docker-compose.dev.yml`; production operators use
-the installer and `pr0xteus` command above.
+`make config-init` and `make run` are development conveniences. `make run` uses
+`docker-compose.yml` plus `docker-compose.dev.yml`; `make config-init` just runs
+the image's `config init` once (no Compose). Production operators use the
+installer and `pr0xteus` command above.

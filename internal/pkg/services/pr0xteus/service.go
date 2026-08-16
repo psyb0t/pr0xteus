@@ -102,7 +102,7 @@ func (s *Service) Run(ctx context.Context) error {
 	// PoolState is rebuilt from cold so any previously-running
 	// cells are unreachable to us anyway.
 	if gs, ok := s.spawner.(*CellSpawner); ok {
-		reaped, err := gs.ReapOrphans(ctx, nil)
+		reaped, err := gs.ReapOrphans(ctx, nil, false)
 		if err != nil {
 			logger.Warn("boot orphan reap failed", "err", err)
 		} else if reaped > 0 {

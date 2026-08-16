@@ -296,18 +296,22 @@ func (i *Infra) setupController(ctx context.Context) error {
 		"PR0XTEUS_API_TOKEN":                 i.APIToken,
 		"PR0XTEUS_CELL_IMAGE":                cellImage,
 		"PR0XTEUS_CELL_NETWORK":              i.Network.Name,
-		"PR0XTEUS_DOCKER_HOST":               "unix:///var/run/docker.sock",
-		"PR0XTEUS_MANAGED_SCOPE":             filepath.Base(i.workDir),
-		"TUNNEL_POOL_DEFAULT_POOL":           "integration",
-		"TUNNEL_POOL_BUNDLE_DIR":             bundleDir,
-		"TUNNEL_POOL_LISTEN_ADDR":            ":8000",
-		"TUNNEL_POOL_METRICS_ADDR":           ":9091",
-		"TUNNEL_POOL_POOLS_FILE":             poolsFile,
-		"TUNNEL_POOL_ROUTING_FILE":           routingFile,
-		"TUNNEL_POOL_SPAWN_TIMEOUT":          "2m",
-		"LOG_ADD_SOURCE":                     "true",
-		"LOG_FORMAT":                         "json",
-		"LOG_LEVEL":                          "info",
+		// Intentionally the raw host socket, not the socket-proxy: Testcontainers
+		// needs real Docker access to spawn cell containers, so this suite never
+		// exercises the socket-proxy allowlist boundary. That boundary is
+		// verified separately by `make audit-compose` / scripts/audit-compose.sh.
+		"PR0XTEUS_DOCKER_HOST":      "unix:///var/run/docker.sock",
+		"PR0XTEUS_MANAGED_SCOPE":    filepath.Base(i.workDir),
+		"TUNNEL_POOL_DEFAULT_POOL":  "integration",
+		"TUNNEL_POOL_BUNDLE_DIR":    bundleDir,
+		"TUNNEL_POOL_LISTEN_ADDR":   ":8000",
+		"TUNNEL_POOL_METRICS_ADDR":  ":9091",
+		"TUNNEL_POOL_POOLS_FILE":    poolsFile,
+		"TUNNEL_POOL_ROUTING_FILE":  routingFile,
+		"TUNNEL_POOL_SPAWN_TIMEOUT": "2m",
+		"LOG_ADD_SOURCE":            "true",
+		"LOG_FORMAT":                "json",
+		"LOG_LEVEL":                 "info",
 	}
 	if i.coverageOutput != "" {
 		dockerfile = controllerCoverageDockerfile

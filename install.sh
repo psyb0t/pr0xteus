@@ -522,7 +522,14 @@ uninstall() {
         fi
     fi
 
-    cmd_path="$(command -v pr0xteus 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+    # Resolve the concrete file THIS invocation is running as, never a fresh
+    # PATH search: with both a per-user and system install present, `command -v
+    # pr0xteus` can resolve to whichever one wins $PATH and delete the OTHER
+    # install while reporting success. BASH_SOURCE[0] is the absolute path the
+    # shell actually exec'd (bash resolves PATH lookups to an absolute path
+    # before exec'ing, which the shebang re-exec then passes through), so this
+    # only ever removes the install this wrapper belongs to.
+    cmd_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
     say "removing the pr0xteus command ($cmd_path)"
     if [[ -w "$(dirname "$cmd_path")" ]]; then
         rm -f "$cmd_path"

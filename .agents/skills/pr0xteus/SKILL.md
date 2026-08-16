@@ -10,7 +10,7 @@ metadata:
     requires:
       bins: [bash, curl, docker, jq]
 permissions:
-  network: "Outbound HTTP only to the user-configured PR0XTEUS_URL. Traffic sent through an allocated SOCKS5 URL exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs."
+  network: "Runtime control-API calls go only to the user-configured PR0XTEUS_URL. Traffic sent through an allocated SOCKS5 URL exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs. pkg/client's preflight check additionally makes direct, unproxied calls to api.ipify.org and ifconfig.me to confirm the exit IP actually changed. Setup time (references/setup.md) also reaches raw.githubusercontent.com for the installer and Docker Hub for the pinned image."
   shell: "bash, curl, jq, and explicit Docker commands from references/setup.md for user-requested setup or verification."
   filesystem: "Normal use reads PR0XTEUS_URL and PR0XTEUS_API_TOKEN from the environment. Operator setup writes only gitignored local WireGuard, pool, routing, token, and .env files."
 ---
@@ -46,6 +46,8 @@ before touching the stack.
 - Checking whether the controller is alive or inspecting configured pools and
   their hot-tunnel state.
 - Replacing a broken SOCKS5 assignment while avoiding the same old cell.
+- Inspecting live cells and their traffic (`/v1/cells`), or destroying one on
+  demand — see [references/setup.md](references/setup.md#cells).
 - Wiring a Go service through `pkg/client`, with VPN-only traffic by default or
   explicit public-first fallback where that makes sense.
 

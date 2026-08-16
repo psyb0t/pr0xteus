@@ -91,6 +91,10 @@ commands: `pr0xteus stop`, `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade
 (prompts before deleting `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade`
 to use the moving `:latest` image for one run.
 
+To reach the controller from a tailnet instead of loopback-only, see the
+`PR0XTEUS_TAILSCALE_ENABLED` sidecar option in
+[docs/deploy.md](../../../../docs/deploy.md#tailscale-sidecar).
+
 ## Run it with Docker directly
 
 The `pr0xteus` command is only a guardrail around Docker: it pulls the pinned
@@ -151,6 +155,37 @@ docker run --rm --network pr0xteus-egress \
 
 unset token proxy_url allocation
 unset -a auth_header
+```
+
+## Cells
+
+The controller also exposes the live cell state behind the pools above —
+observability plus on-demand teardown, discovered straight from Docker (the
+`pr0xteus.parent.id` label), not from in-memory bookkeeping:
+
+```bash
+curl --fail-with-body "${auth_header[@]}" "$PR0XTEUS_URL/v1/cells" | jq .
+
+# containerID is a "containerId" value from the list above.
+curl --fail-with-body "${auth_header[@]}" "$PR0XTEUS_URL/v1/cells/$containerID" | jq .
+```
+
+Each cell view carries `containerId`, `parentId`, `pool`, `confName`, `state`
+(Docker's own container state), `exitCountry`, `createdAt`, `uptimeSeconds`,
+and a `traffic` snapshot (`requests`, `bytesUp`, `bytesDown`, `active`,
+`dialFailures`, `destinations`) scraped from the cell's own `/status`.
+`traffic` is omitted and `statusError` set when the controller can't reach a
+cell's control server. `GET /v1/cells/{containerID}` 404s when the ID isn't
+tracked.
+
+`DELETE /v1/cells/{containerID}` stops that cell's container and clears its
+pool slot so the next request re-spawns; `204` on success, `404` when
+untracked. Only destroy a cell your own task allocated, and only when the
+user asked for it.
+
+```bash
+curl --fail-with-body --request DELETE \
+  "${auth_header[@]}" "$PR0XTEUS_URL/v1/cells/$containerID"
 ```
 
 ## Agent API use

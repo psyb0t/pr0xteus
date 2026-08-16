@@ -115,6 +115,7 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 		"exit_country", response.ExitCountry,
 	)
 	aichteeteapee.WriteJSON(w, http.StatusOK, response)
+	TunnelAcquireTotal.WithLabelValues(acq.Pool, metricOutcomeOK).Inc()
 
 	// The manager tracks selection only, not downstream SOCKS5 session lifetime.
 	// LastUsedAt keeps a just-returned tunnel warm for the configured idle window.

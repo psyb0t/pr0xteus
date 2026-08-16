@@ -698,6 +698,11 @@ func mustParsePort(port int) mobynet.Port {
 // these on sight.
 const reapStateCreated = "created"
 
+// orphanInFlightGrace is added to the spawn timeout to form the minimum age
+// below which the ticker orphan-reaper leaves a container alone — it may be a
+// spawn in progress that has not yet been published to a pool.
+const orphanInFlightGrace = 30 * time.Second
+
 // ReapOrphans lists every container tagged with LabelManaged and
 // removes the ones that are either (a) in "created" state (failed
 // spawn cleanup) or (b) running but not present in keepIDs (the
@@ -710,7 +715,7 @@ const reapStateCreated = "created"
 //
 // Returns the count of containers reaped.
 func (s *CellSpawner) ReapOrphans(
-	ctx context.Context, keepIDs map[string]struct{},
+	ctx context.Context, keepIDs map[string]struct{}, protectInFlight bool,
 ) (int, error) {
 	listed, err := s.docker.ContainerList(ctx, client.ContainerListOptions{
 		All: true,
@@ -722,10 +727,23 @@ func (s *CellSpawner) ReapOrphans(
 		return 0, ctxerrors.Wrap(err, "list managed containers")
 	}
 
+	// A cell is "in flight" from ContainerStart until the manager publishes it
+	// to a pool (setTunnel): running, but absent from keepIDs. The ticker path
+	// (protectInFlight) therefore skips containers younger than the spawn
+	// deadline + a buffer, so it never reaps a cell out from under an active
+	// spawn. The boot path passes false — it must kill everything a prior
+	// process left behind, regardless of age.
+	minAge := s.cfg.SpawnTimeout + orphanInFlightGrace
+	now := time.Now()
+
 	reaped := 0
 
 	for _, c := range listed.Items {
 		if _, keep := keepIDs[c.ID]; keep {
+			continue
+		}
+
+		if protectInFlight && now.Sub(time.Unix(c.Created, 0)) < minAge {
 			continue
 		}
 

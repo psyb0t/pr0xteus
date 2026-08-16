@@ -11,6 +11,14 @@ const (
 	metricLabelPool    = "pool"
 	metricLabelOutcome = "outcome"
 	metricLabelReason  = "reason"
+
+	// Spawn outcomes for TunnelSpawnsTotal.
+	metricOutcomeSuccess   = "success"
+	metricOutcomeTimeout   = "timeout"
+	metricOutcomeSpawnFail = "spawn_fail"
+
+	// Acquire outcome for TunnelAcquireTotal (success path).
+	metricOutcomeOK = "ok"
 )
 
 // Prometheus collectors keep every label bounded by configuration: pool,

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/psyb0t/aichteeteapee"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -112,6 +113,28 @@ func TestTunnelPoolClient_RejectsInvalidResponses(t *testing.T) {
 			assert.Nil(t, response)
 		})
 	}
+}
+
+func TestTunnelPoolClient_MapsPoolExhaustedResponse(t *testing.T) {
+	t.Parallel()
+
+	envelope, err := json.Marshal(aichteeteapee.ErrorResponseServiceUnavailable)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, writeErr := w.Write(envelope)
+		assert.NoError(t, writeErr)
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewTunnelPoolClient(server.URL, 0)
+	response, err := client.ProxyForCountry(
+		context.Background(), ProxyRequest{Country: "DE"},
+	)
+
+	require.ErrorIs(t, err, ErrPoolExhausted)
+	assert.Nil(t, response)
 }
 
 func TestTunnelPoolClient_ExposesConfiguredPoolAndDoer(t *testing.T) {

@@ -324,6 +324,7 @@ func TestCellSpawner_ReapsOnlyUntrackedEligibleContainers(t *testing.T) {
 	reaped, err := spawner.ReapOrphans(
 		context.Background(),
 		map[string]struct{}{"kept": {}},
+		false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 3, reaped)
@@ -343,6 +344,53 @@ func TestCellSpawner_ReapsOnlyUntrackedEligibleContainers(t *testing.T) {
 		},
 		docker.listOptions[0].Filters["label"],
 	)
+}
+
+func TestCellSpawner_ReapOrphansRespectsInFlightGrace(t *testing.T) {
+	t.Parallel()
+
+	young := time.Now().Add(-1 * time.Second).Unix()
+	old := time.Now().Add(-10 * time.Minute).Unix()
+
+	testCases := []struct {
+		name            string
+		protectInFlight bool
+		wantReaped      []string
+	}{
+		{
+			name:            "protects a young spawn, reaps the old orphan",
+			protectInFlight: true,
+			wantReaped:      []string{"old-cell"},
+		},
+		{
+			name:            "reaps the young container when protection is off",
+			protectInFlight: false,
+			wantReaped:      []string{"young-cell", "old-cell"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			docker := &spawnerTestDockerClient{list: mobyclient.ContainerListResult{
+				Items: []container.Summary{
+					{ID: "young-cell", State: "running", Created: young},
+					{ID: "old-cell", State: "running", Created: old},
+				},
+			}}
+			spawner := newSpawnerTestSubject(docker)
+			spawner.cfg.SpawnTimeout = 20 * time.Second
+
+			reaped, err := spawner.ReapOrphans(
+				context.Background(), map[string]struct{}{}, tc.protectInFlight,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, len(tc.wantReaped), reaped)
+			assert.ElementsMatch(t, tc.wantReaped, docker.stopped)
+			assert.ElementsMatch(t, tc.wantReaped, docker.removed)
+		})
+	}
 }
 
 func newSpawnerTestSubject(docker DockerClient) *CellSpawner {

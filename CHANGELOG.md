@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.5.0 — 2026-08-16
+
+Security + reliability hardening. No REST/MCP contract change and no config
+migration; the `socks5://` URL from `POST /v1/proxies` is unchanged.
+
+- **Security: the cell no longer accepts new inbound on the WireGuard side.**
+  The cell firewall carried a blanket `-A INPUT -i wg0 -j ACCEPT` that left
+  cellproxy's SOCKS5 port and its `/status` control endpoint reachable from the
+  tunnel (egress) side — the VPN provider, and co-tenant peers on providers that
+  don't isolate them. Return traffic for the proxy's own outbound flows is
+  already covered by the ESTABLISHED,RELATED accept, so nothing legitimate
+  relied on it; new inbound is now accepted only on the cell's docker network.
+- **Fix: the orphan reaper no longer reaps a cell mid-spawn.** The reconciler
+  protected only cells already published to a pool, so a spawn in progress
+  (running, not yet tracked) could be killed and surface as a spurious 503. The
+  ticker path now leaves containers younger than the spawn deadline alone; boot
+  reaping still clears everything a prior process left behind.
+- **Fix: data race on a freshly-spawned tunnel.** The returned acquisition copy
+  is taken before the tunnel is published, so a concurrent acquire can no longer
+  mutate the struct while it is being read (a `-race` finding).
+- **Prometheus tunnel-pool metrics now emit.** `spawns_total`, `reaps_total`,
+  `acquires_total`, `hot_tunnels`, and `spawn_seconds` were registered but never
+  updated; they now record spawn outcome + duration, reaps by reason, successful
+  acquisitions, and the per-pool hot-tunnel gauge.
+- **Client: an exhausted pool fails fast.** `pkg/client` maps the server's 503
+  pool-unavailable response to `ErrPoolExhausted`, so the documented terminal
+  path fires instead of retrying the full backoff.
+- Docs: rewrote `docs/architecture.md` with the real control/data-plane design
+  (it was framework boilerplate), removed a stale getting-started page,
+  documented the `/v1/cells` surface in the agent skill, hardened the installer
+  `uninstall` path resolution, and corrected the `make build` vs `docker-build`
+  and `config-init` notes.
+
 ## v0.4.0 — 2026-08-16
 
 - **Installer: per-user and system-wide modes.** `install.sh` now installs
@@ -40,7 +73,7 @@
 - Added the cell observability API: `GET /v1/cells` (every live cell with its
   traffic snapshot), `GET /v1/cells/{containerID}` (one cell), and
   `DELETE /v1/cells/{containerID}` (destroy a cell on demand). Routes remain
-  hand-wired on `aichteeteapee`; see [ADR 0001](docs/adr/0001-cell-metrics-proxy-and-control-api.md).
+  hand-wired on `aichteeteapee`.
 - New config: `PR0XTEUS_CELL_CONTROL_PORT` (default `9090`) and the auto-derived
   `PR0XTEUS_PARENT_ID`.
 

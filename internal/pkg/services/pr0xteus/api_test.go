@@ -179,6 +179,26 @@ func TestAPIServer_AssignsCountryAndPool(t *testing.T) {
 	}
 }
 
+// TestAPIServer_SuccessfulAcquireIncrementsAcquireMetric extends the
+// success path covered by TestAPIServer_AssignsCountryAndPool with an
+// assertion on TunnelAcquireTotal{pool,"ok"}. It intentionally does not call
+// t.Parallel(): TunnelAcquireTotal is a package-level promauto counter
+// shared across the whole test binary, so the delta must be read serially.
+func TestAPIServer_SuccessfulAcquireIncrementsAcquireMetric(t *testing.T) {
+	server, _ := newTestAPIServer(t)
+	response := httptest.NewRecorder()
+
+	before := counterValue(t, TunnelAcquireTotal, "western", metricOutcomeOK)
+
+	server.ServeHTTP(
+		response,
+		newAuthenticatedRequest(t, http.MethodPost, pathV1Proxies, `{"country":"DE"}`),
+	)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, before+1, counterValue(t, TunnelAcquireTotal, "western", metricOutcomeOK))
+}
+
 func TestAPIServer_ProtectsPoolStatus(t *testing.T) {
 	t.Parallel()
 
