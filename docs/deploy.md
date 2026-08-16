@@ -16,15 +16,15 @@ For the exact working configuration, use
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-The installer creates `~/.pr0xteus/`, writes the local `docker-compose.yml`,
+The installer creates `~/.config/pr0xteus/`, writes the local `docker-compose.yml`,
 and adds the `pr0xteus` command. It preserves config on a later run. It creates
 `.env`, pool and routing skeletons, and empty `secrets/wireguard/`; it never
 manufactures a provider configuration. The random bearer token is written
-directly to owner-only `~/.pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
+directly to owner-only `~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
 
-Add real `*.conf` files under `~/.pr0xteus/secrets/wireguard/`, then change
-`~/.pr0xteus/secrets/pools.yaml` and
-`~/.pr0xteus/config/egress-routing.yaml` to reference their basenames. The
+Add real `*.conf` files under `~/.config/pr0xteus/secrets/wireguard/`, then change
+`~/.config/pr0xteus/secrets/pools.yaml` and
+`~/.config/pr0xteus/config/egress-routing.yaml` to reference their basenames. The
 installer handles the absolute host path Docker needs when it binds one chosen
 file into each cell.
 
@@ -38,7 +38,7 @@ pr0xteus start
 `latest` uses its baked-in `cell-latest` image. A versioned controller uses its
 matching versioned cell. To pin a controller release, set
 `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in
-`~/.pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. A deliberate
+`~/.config/pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. A deliberate
 `PR0XTEUS_CELL_IMAGE` override must be a released digest and leave
 `PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false`.
 
@@ -46,7 +46,7 @@ matching versioned cell. To pin a controller release, set
 
 The controller and metrics listeners stay on host loopback. To reach the
 authenticated controller API from your tailnet, add this to the owner-only
-`~/.pr0xteus/.env`:
+`~/.config/pr0xteus/.env`:
 
 ```dotenv
 PR0XTEUS_TAILSCALE_ENABLED=true
@@ -66,21 +66,21 @@ after the sidecar has joined:
 
 ```bash
 docker compose --profile tailscale \
-  --project-directory "$HOME/.pr0xteus" \
-  --env-file "$HOME/.pr0xteus/.env" \
-  -f "$HOME/.pr0xteus/docker-compose.yml" \
+  --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
   up --detach --pull always
 
 docker compose --profile tailscale \
-  --project-directory "$HOME/.pr0xteus" \
-  --env-file "$HOME/.pr0xteus/.env" \
-  -f "$HOME/.pr0xteus/docker-compose.yml" \
+  --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
   exec -T tailscale tailscale serve --bg --http=80 http://pr0xteus:8000
 ```
 
 The sidecar never publishes a host port and does not reuse a Tailscale client
 running on the host. Its persistent state is
-`~/.pr0xteus/tailscale/state`, so restarts retain the sidecar identity and do
+`~/.config/pr0xteus/tailscale/state`, so restarts retain the sidecar identity and do
 not consume the auth key again. For Headscale, set
 `TS_EXTRA_ARGS=--accept-dns=false --login-server=https://headscale.example`.
 The sidecar needs `/dev/net/tun`, `NET_ADMIN`, and `NET_RAW` to create its own
@@ -89,7 +89,7 @@ kernel-mode tunnel; no other Pr0xteus service receives those privileges.
 ## Verify without leaking the bearer token
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 curl --fail-with-body \
   --header @<(printf 'Authorization: Bearer %s' "$token") \
   --header 'Content-Type: application/json' \

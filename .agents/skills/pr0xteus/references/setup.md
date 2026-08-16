@@ -13,24 +13,47 @@ paths, tokens, or Docker flags.
 
 ## Operator setup
 
+**Download the installer and read it before running it — never pipe `curl`
+straight into a shell.** Confirm it only fetches the pinned image, runs the
+image's `config init`, and installs the `pr0xteus` command — then run it.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
+# 1. Download (do not pipe curl into a shell).
+curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh -o pr0xteus-install.sh
+
+# 2. Inspect — read the whole thing.
+less pr0xteus-install.sh
+
+# 3a. Per-user install (no root): command -> ~/.local/bin, config ->
+#     ~/.config/pr0xteus, just for the current user.
+bash pr0xteus-install.sh
+
+# 3b. Or system-wide: command -> /usr/local/bin, config -> /etc/pr0xteus
+#     (root-owned, readable by the `docker` group so any docker-group operator
+#     drives the one shared stack).
+sudo bash pr0xteus-install.sh --system
 ```
 
-The installer creates ignored local files only when absent:
+The mode auto-detects from who runs it (root → system-wide, otherwise
+per-user); force it with `--user` or `--system`. Append `--rolling` to pin the
+moving `:latest` instead of the latest release. A per-user install that finds
+`~/.local/bin` off `PATH` prints the exact bash/zsh one-liner to add it.
+
+The installer creates ignored local files only when absent (per-user paths
+shown; a system-wide install uses `/etc/pr0xteus` instead of `~/.config/pr0xteus`):
 
 ```text
-~/.pr0xteus/secrets/wireguard/*.conf      real provider or private-network files
-~/.pr0xteus/secrets/pools.yaml            approved logical pools
-~/.pr0xteus/config/egress-routing.yaml    country -> pool policy
-~/.pr0xteus/.env                           bearer token, host path, image and ports
+~/.config/pr0xteus/secrets/wireguard/*.conf      real provider or private-network files
+~/.config/pr0xteus/secrets/pools.yaml            approved logical pools
+~/.config/pr0xteus/config/egress-routing.yaml    country -> pool policy
+~/.config/pr0xteus/.env                           bearer token, host path, image and ports
 ```
 
 The bearer token is `PR0XTEUS_API_TOKEN` in owner-only `.env`, not a separate
 secret file. The installer owns the absolute host path the controller needs
 when it asks Docker to bind one chosen file into a cell.
 
-Put an authorized `*.conf` file in `~/.pr0xteus/secrets/wireguard/`, then make
+Put an authorized `*.conf` file in `~/.config/pr0xteus/secrets/wireguard/`, then make
 the policy match its basename. A file named `us-example.conf` uses `us-example`
 below:
 
@@ -65,13 +88,45 @@ needs an override; that override must contain an immutable digest.
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
 commands: `pr0xteus stop`, `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
 (re-pin to the newest release and drop the old image), and `pr0xteus uninstall`
-(prompts before deleting `~/.pr0xteus`). Append `--rolling` to `start`/`upgrade`
+(prompts before deleting `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade`
 to use the moving `:latest` image for one run.
+
+## Run it with Docker directly
+
+The `pr0xteus` command is only a guardrail around Docker: it pulls the pinned
+image, runs the image's `config init`, and drives `docker compose`. To do it
+yourself against a config directory you own — no installer, no wrapper — pin a
+released tag (not `:latest`) and reproduce those steps:
+
+```bash
+config_dir=~/.config/pr0xteus            # any directory you own
+image=psyb0t/pr0xteus:vX.Y.Z             # pin a released tag
+mkdir -p "$config_dir"
+docker pull "$image"
+
+# Scaffold compose + .env + config skeleton (preserves existing files).
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$config_dir:/config" \
+  "$image" config init \
+  --config-dir /config \
+  --host-config-dir "$config_dir" \
+  --controller-image "$image"
+
+# Fill secrets/wireguard/*.conf, secrets/pools.yaml, config/egress-routing.yaml,
+# and PR0XTEUS_API_TOKEN in .env (see above), then bring the stack up:
+docker compose --project-directory "$config_dir" \
+  --env-file "$config_dir/.env" \
+  -f "$config_dir/docker-compose.yml" up -d
+```
+
+`--host-config-dir` must be the real host path so the controller can bind one
+chosen WireGuard file into a cell. This is exactly what `pr0xteus setup` +
+`pr0xteus start` do for you.
 
 ## Allocate and prove a proxy
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(

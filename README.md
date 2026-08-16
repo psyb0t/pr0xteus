@@ -61,7 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | b
 ```
 
 That puts the `pr0xteus` command in `~/.local/bin/` and your config in
-`~/.pr0xteus/` (owner-only). If `~/.local/bin` isn't on your `PATH` the installer
+`~/.config/pr0xteus/` (owner-only). If `~/.local/bin` isn't on your `PATH` the installer
 prints the exact one-liner to add it for bash or zsh.
 
 **System-wide** — run it with `sudo` for one shared stack any docker-group user
@@ -94,14 +94,14 @@ Want to track `main` instead of a release? Add `--rolling` to force the moving
 Copy your provider or private-network file into the config directory:
 
 ```bash
-cp /wherever/you/keep/your-vpn.conf ~/.pr0xteus/secrets/wireguard/us.conf
+cp /wherever/you/keep/your-vpn.conf ~/.config/pr0xteus/secrets/wireguard/us.conf
 ```
 
 Then edit these two small files so `us` means your file without `.conf` and
 `US` is the country you want callers to request:
 
 ```yaml
-# ~/.pr0xteus/secrets/pools.yaml
+# ~/.config/pr0xteus/secrets/pools.yaml
 pools:
   us:
     region: north-america
@@ -112,7 +112,7 @@ pools:
 ```
 
 ```yaml
-# ~/.pr0xteus/config/egress-routing.yaml
+# ~/.config/pr0xteus/config/egress-routing.yaml
 country_to_pool:
   US: us
 default_pool: us
@@ -135,9 +135,9 @@ pr0xteus upgrade     # re-pin to the newest release, pull it, drop the old image
 pr0xteus uninstall   # stop the stack, remove the command, ask before deleting data
 ```
 
-`upgrade` re-pins `~/.pr0xteus/.env` to the latest release and removes the
+`upgrade` re-pins `~/.config/pr0xteus/.env` to the latest release and removes the
 previous image so dangling layers don't pile up; `uninstall` only deletes your
-`~/.pr0xteus` data and volumes if you say yes at the prompt.
+`~/.config/pr0xteus` data and volumes if you say yes at the prompt.
 
 The [complete example](docs/complete-example.md) shows an allocation, a
 private SOCKS5 consumer, and an actual egress proof.
@@ -146,7 +146,7 @@ private SOCKS5 consumer, and an actual egress proof.
 
 Want the same private API from another machine without opening a host port?
 Give the installed stack its own Tailscale identity. Set these in
-`~/.pr0xteus/.env`, then run `pr0xteus start`:
+`~/.config/pr0xteus/.env`, then run `pr0xteus start`:
 
 ```dotenv
 PR0XTEUS_TAILSCALE_ENABLED=true
@@ -159,7 +159,7 @@ That starts an optional sidecar in its own network namespace, waits for it to
 join your tailnet, and configures Tailscale Serve to proxy
 `http://pr0xteus/v1/...` to the private controller. It exposes no host port,
 does not touch a host Tailscale client, and still requires the bearer token.
-The sidecar's tailnet state lives in `~/.pr0xteus/tailscale/state`, so it keeps
+The sidecar's tailnet state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps
 the same identity across restarts.
 
 **Those three values are the only ones you set.** The compose file fixes the
@@ -189,12 +189,12 @@ The wrapper is the normal operator path. If you want every Docker command in
 front of you, initialize the same local stack directly:
 
 ```bash
-mkdir -p ~/.pr0xteus
+mkdir -p ~/.config/pr0xteus
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$HOME/.pr0xteus:/config" \
+  -v "$HOME/.config/pr0xteus:/config" \
   psyb0t/pr0xteus:latest config init \
   --config-dir /config \
-  --host-config-dir "$HOME/.pr0xteus" \
+  --host-config-dir "$HOME/.config/pr0xteus" \
   --controller-image psyb0t/pr0xteus:latest
 ```
 
@@ -203,12 +203,12 @@ as in [Quick start](#quick-start). Validate and start it with Docker itself:
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$HOME/.pr0xteus:/config:ro" \
+  -v "$HOME/.config/pr0xteus:/config:ro" \
   psyb0t/pr0xteus:latest config check --config-dir /config
 
-docker compose --project-directory "$HOME/.pr0xteus" \
-  --env-file "$HOME/.pr0xteus/.env" \
-  -f "$HOME/.pr0xteus/docker-compose.yml" \
+docker compose --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
   up --detach --pull always
 ```
 
@@ -247,7 +247,7 @@ implementation detail in [internal/README.md](internal/README.md) and
 
 ## Configuration
 
-All sensitive or provider-specific material lives under `~/.pr0xteus/`, stays
+All sensitive or provider-specific material lives under `~/.config/pr0xteus/`, stays
 out of Git, and stays out of Docker build contexts:
 
 - `secrets/wireguard/*.conf` — real WireGuard files.
@@ -264,7 +264,7 @@ unpinned escape hatch in the generated `.env`.
 
 To stay on a particular release, change
 `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in
-`~/.pr0xteus/.env`, run `pr0xteus setup`, then run `pr0xteus start`.
+`~/.config/pr0xteus/.env`, run `pr0xteus setup`, then run `pr0xteus start`.
 
 Pool filenames need not be provider-specific. For a file that does not follow
 the legacy `<country>-<location>.conf` convention, add its country explicitly:

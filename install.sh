@@ -5,7 +5,7 @@ set -euo pipefail
 #
 #   Per-user (no root) — installs into your home, for the current user only:
 #     curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
-#     command -> ~/.local/bin/pr0xteus, config -> ~/.pr0xteus
+#     command -> ~/.local/bin/pr0xteus, config -> ~/.config/pr0xteus
 #
 #   System-wide (root) — one shared stack any docker-group user can drive:
 #     curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
@@ -19,7 +19,7 @@ readonly INSTALL_LOG_FILE="/tmp/pr0xteus-install.log"
 readonly SYSTEM_INSTALL_PATH="/usr/local/bin/pr0xteus"
 readonly SYSTEM_CONFIG_DIR="/etc/pr0xteus"
 readonly WRAPPER_MARKER="pr0xteus-managed-command"
-readonly CONFIG_DIRECTORY_NAME=".pr0xteus"
+readonly CONFIG_DIRECTORY_NAME="pr0xteus"
 # shellcheck disable=SC2016  # deliberately literal: $HOME/$PATH must land in the rc file unexpanded
 readonly USER_PATH_SNIPPET='export PATH="$HOME/.local/bin:$PATH"'
 readonly IMAGE_REPO="psyb0t/pr0xteus"
@@ -65,7 +65,7 @@ resolve_mode() {
 		((EUID != 0)) ||
 			fail "the per-user install must not run as root — run it as your normal account, or use --system"
 		INSTALL_PATH="$HOME/.local/bin/pr0xteus"
-		TARGET_CONFIG_DIR="$HOME/$CONFIG_DIRECTORY_NAME"
+		TARGET_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG_DIRECTORY_NAME"
 		;;
 	*)
 		fail "unknown mode: $MODE"
@@ -178,7 +178,7 @@ write_command() {
 # pr0xteus-managed-command
 set -euo pipefail
 
-readonly CONFIG_DIRECTORY_NAME=".pr0xteus"
+readonly CONFIG_DIRECTORY_NAME="pr0xteus"
 readonly SYSTEM_CONFIG_DIR="/etc/pr0xteus"
 readonly IMAGE_REPO="psyb0t/pr0xteus"
 readonly ROLLING_IMAGE="psyb0t/pr0xteus:latest"
@@ -218,13 +218,13 @@ Commands:
              only, instead of the pinned release tag. Handy for testing main.
 
 Config location: $PR0XTEUS_HOME if set, else /etc/pr0xteus for a system-wide
-install, else ~/.pr0xteus for a per-user install.
+install, else ~/.config/pr0xteus for a per-user install.
 EOF
 }
 
 # config_directory resolves where the stack config lives: an explicit
 # PR0XTEUS_HOME wins; otherwise a system-wide install (/etc/pr0xteus) is
-# preferred when present, falling back to the per-user ~/.pr0xteus.
+# preferred when present, falling back to the per-user ~/.config/pr0xteus.
 config_directory() {
     local config_dir
     if [[ -n "${PR0XTEUS_HOME:-}" ]]; then
@@ -232,7 +232,7 @@ config_directory() {
     elif [[ -f "$SYSTEM_CONFIG_DIR/docker-compose.yml" ]]; then
         config_dir="$SYSTEM_CONFIG_DIR"
     else
-        config_dir="$HOME/$CONFIG_DIRECTORY_NAME"
+        config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG_DIRECTORY_NAME"
     fi
 
     [[ "$config_dir" = /* ]] || fail "PR0XTEUS_HOME must be an absolute path"

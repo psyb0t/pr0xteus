@@ -15,15 +15,15 @@ For component detail, see [architecture.md](architecture.md),
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | sudo bash
 ```
 
-The installer creates `~/.pr0xteus/`, writes its local `docker-compose.yml`,
+The installer creates `~/.config/pr0xteus/`, writes its local `docker-compose.yml`,
 and installs the `pr0xteus` command. It only creates these local files when
 they are missing:
 
 ```text
-~/.pr0xteus/secrets/wireguard/           put real *.conf files here
-~/.pr0xteus/secrets/pools.yaml            approved logical pools
-~/.pr0xteus/config/egress-routing.yaml    requested country -> pool mapping
-~/.pr0xteus/.env                          bearer token, host path, image and ports
+~/.config/pr0xteus/secrets/wireguard/           put real *.conf files here
+~/.config/pr0xteus/secrets/pools.yaml            approved logical pools
+~/.config/pr0xteus/config/egress-routing.yaml    requested country -> pool mapping
+~/.config/pr0xteus/.env                          bearer token, host path, image and ports
 ```
 
 `.env` is mode `0600`; it contains `PR0XTEUS_API_TOKEN`. Keep it local. There
@@ -31,7 +31,7 @@ is no separate Compose `secrets/` token file.
 
 The controller carries its matching cell reference: `latest` carries
 `cell-latest`; `vX.Y.Z` carries `cell-vX.Y.Z`. To pin a release, set
-`PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.pr0xteus/.env`, then
+`PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.config/pr0xteus/.env`, then
 run `pr0xteus setup`. Do not set a cell override unless you need one; if you
 do, it must include an immutable digest.
 
@@ -40,7 +40,7 @@ do, it must include an immutable digest.
 Put a provider or private-network file at:
 
 ```text
-~/.pr0xteus/secrets/wireguard/us-example.conf
+~/.config/pr0xteus/secrets/wireguard/us-example.conf
 ```
 
 The name used in the pool is the filename without `.conf`. Replace the pool
@@ -85,7 +85,7 @@ that a provider tunnel can be allocated right now.
 
 ### Optional: put the API on your tailnet
 
-Keep the loopback listener, then add this to `~/.pr0xteus/.env` and start
+Keep the loopback listener, then add this to `~/.config/pr0xteus/.env` and start
 again:
 
 ```dotenv
@@ -101,7 +101,7 @@ pr0xteus start
 The optional sidecar gets its own tailnet identity and proxies
 `http://pr0xteus/v1/...` to the controller through Tailscale Serve. It opens
 no host port; the bearer token below is still required. Its identity survives
-restarts in `~/.pr0xteus/tailscale/state`.
+restarts in `~/.config/pr0xteus/tailscale/state`.
 
 ## 4. Allocate one configured exit
 
@@ -109,7 +109,7 @@ Read the token from `.env` without putting it in command history or curl's
 argument list:
 
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.pr0xteus/.env)"
+token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(
