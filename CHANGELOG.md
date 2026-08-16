@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.4.0 — 2026-08-16
+
+- **Installer: per-user and system-wide modes.** `install.sh` now installs
+  either per-user (no root → `~/.local/bin` + `~/.config/pr0xteus`) or
+  system-wide (sudo → `/usr/local/bin` + `/etc/pr0xteus`, root-owned and
+  readable by the `docker` group so any docker-group operator drives the one
+  shared stack). The mode auto-detects from `EUID`, with `--user` / `--system`
+  to force it; `--rolling` still pins the moving `:latest`. A per-user install
+  that finds `~/.local/bin` off `PATH` prints the exact bash/zsh one-liner to
+  add it.
+- **Breaking: per-user config moved to `~/.config/pr0xteus`** (XDG,
+  `$XDG_CONFIG_HOME`-aware) from `~/.pr0xteus`. Re-running the installer writes
+  the new location; an existing `~/.pr0xteus` is left untouched — move it, or
+  set `PR0XTEUS_HOME=~/.pr0xteus` to keep using it.
+- **Agent skill install-safety.** The `.agents/` skill now tells the model to
+  download and inspect `install.sh` before running it (never `curl | bash`),
+  documents both install modes plus a direct `config init` + `docker compose`
+  path, and uses the new config paths.
+- Test coverage now runs through the servicepack v1.5.0 engine, gating every
+  package (controller services included) instead of a custom subset. Added
+  `make test-api`, which builds the image from its Dockerfile in Testcontainers
+  and drives every control-plane route over real HTTP.
+
 ## v0.3.0 — 2026-08-14
 
 - Replaced microSocks in the cell with `cellproxy`, a first-party Go SOCKS5
