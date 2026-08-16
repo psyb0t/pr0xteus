@@ -28,17 +28,33 @@ func TestCellEntrypoint_DoesNotAcceptInboundFromTheTunnelSide(t *testing.T) {
 	assert.NotContains(t, contents, `iptables -A INPUT -i wg0 -j ACCEPT`)
 }
 
-// TestCellEntrypoint_AcceptsSOCKS5AndControlOnlyOnEgressInterface guards the
-// replacement rules: inbound SOCKS5 + control traffic is accepted only on
-// the docker network interface (EGRESS_IF), never on wg0.
-func TestCellEntrypoint_AcceptsSOCKS5AndControlOnlyOnEgressInterface(t *testing.T) {
+// TestCellEntrypoint_BindsSOCKS5ToEgressAndControlToControlInterface guards the
+// dual-network firewall: SOCKS5 is accepted on the egress interface (where
+// callers consume the socks5:// URL) while the control port is accepted on the
+// derived control interface (the internal cell-control network in dual-network
+// mode), and never on wg0. The exact rule blocks lock the pairing so a control
+// rule can't silently drift back onto the egress interface.
+func TestCellEntrypoint_BindsSOCKS5ToEgressAndControlToControlInterface(t *testing.T) {
 	t.Parallel()
 
 	contents := readEntrypointScript(t)
 
-	assert.Contains(t, contents, `-A INPUT -i "${EGRESS_IF}"`)
-	assert.Contains(t, contents, `--dport "${SOCKS5_PORT}"`)
-	assert.Contains(t, contents, `--dport "${CONTROL_PORT}"`)
+	// The control interface is derived, never hardcoded to eth0.
+	assert.Contains(t, contents, "CONTROL_IF=$(ip -o -4 addr show")
+
+	// SOCKS5 accepted on the egress interface.
+	assert.Contains(
+		t,
+		contents,
+		"-A INPUT -i \"${EGRESS_IF}\" \\\n\t-p tcp --dport \"${SOCKS5_PORT}\" -j ACCEPT",
+	)
+
+	// Control port accepted on the control interface, not egress.
+	assert.Contains(
+		t,
+		contents,
+		"-A INPUT -i \"${CONTROL_IF}\" \\\n\t-p tcp --dport \"${CONTROL_PORT}\" -j ACCEPT",
+	)
 }
 
 func readEntrypointScript(t *testing.T) string {

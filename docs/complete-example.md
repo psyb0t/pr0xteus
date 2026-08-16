@@ -84,9 +84,10 @@ images or starts anything. `pr0xteus status`, `pr0xteus logs --follow`, and
 `pr0xteus stop` are the normal day-to-day commands.
 
 The controller API is `127.0.0.1:8000`; metrics and health are
-`127.0.0.1:9091`. Cells have no host port and live only on
-`pr0xteus-egress`. `/healthz` says the controller is alive; it does not prove
-that a provider tunnel can be allocated right now.
+`127.0.0.1:9091`. Cells have no host port. They join the private egress network
+and the controller-only cell-control network; callers use the controller's
+SOCKS gateway instead of joining either one. `/healthz` says the controller is
+alive; it does not prove that a provider tunnel can be allocated right now.
 
 ### Optional: put the API on your tailnet
 
@@ -110,8 +111,9 @@ restarts in `~/.config/pr0xteus/tailscale/state`.
 
 ## 4. Allocate one configured exit
 
-Read the token from `.env` without putting it in command history or curl's
-argument list:
+Read the token from `.env` without putting it in command history. The returned
+proxy URL is a short-lived credential, so keep it out of logs and do not share
+it:
 
 ```bash
 token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
@@ -132,22 +134,23 @@ The response has this shape:
 
 ```json
 {
-  "url": "socks5://pr0xteus-tunnel-us-123:1080",
+  "url": "socks5://lease-id:lease-secret@127.0.0.1:1080",
   "pool": "us",
-  "exitCountry": "US"
+  "exitCountry": "US",
+  "expiresAt": "2026-01-01T00:15:00Z"
 }
 ```
 
-That URL is Docker-network plumbing and is meant to fail from the host shell.
+That URL targets the controller's loopback SOCKS gateway. It is usable from the
+host shell or any trusted client that can reach that listener; the controller
+validates its lease credentials, forwards bytes to the selected cell over the
+internal control network, and the cell resolves and egresses through WireGuard.
 
-## 5. Prove traffic uses the private SOCKS5 cell
+## 5. Prove traffic uses the WireGuard exit
 
 ```bash
-docker run --rm --network pr0xteus-egress \
-  curlimages/curl@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17 \
-  --fail --silent --show-error \
-  --proxy "$proxy_url" \
-  https://api.ipify.org
+curl --fail --silent --show-error \
+  --proxy "$proxy_url" https://api.ipify.org
 
 unset token proxy_url allocation
 unset -a auth_header

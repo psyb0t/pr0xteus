@@ -99,6 +99,13 @@ const (
 
 	// controlURLScheme is the scheme of the cell control HTTP base URL.
 	controlURLScheme = "http"
+
+	// cellEgressGwPriority pins the egress network as the cell's default-gateway
+	// provider, so the cell's default route (its WireGuard dial) always leaves
+	// via egress and never via the internal control network, which has no route
+	// out. cellControlGwPriority keeps the control network below it.
+	cellEgressGwPriority  = 1
+	cellControlGwPriority = 0
 )
 
 // HTTPDoer is the subset of *http.Client used by the spawner to
@@ -407,7 +414,13 @@ func (s *CellSpawner) buildHostConfig(
 	}
 
 	if s.cfg.CellNetwork != "" {
-		hostCfg.NetworkMode = container.NetworkMode(s.cfg.CellNetwork)
+		// Dual-network mode attaches both networks through
+		// NetworkingConfig.EndpointsConfig with an explicit gateway priority;
+		// naming a single network in NetworkMode alongside a second endpoint is
+		// rejected by the daemon, so only set NetworkMode in single-network mode.
+		if s.cfg.CellControlNetwork == "" {
+			hostCfg.NetworkMode = container.NetworkMode(s.cfg.CellNetwork)
+		}
 
 		return hostCfg
 	}
@@ -431,11 +444,17 @@ func (s *CellSpawner) buildNetworkingConfig() *mobynet.NetworkingConfig {
 		return nil
 	}
 
-	return &mobynet.NetworkingConfig{
-		EndpointsConfig: map[string]*mobynet.EndpointSettings{
-			s.cfg.CellNetwork: {},
-		},
+	endpoints := map[string]*mobynet.EndpointSettings{
+		s.cfg.CellNetwork: {GwPriority: cellEgressGwPriority},
 	}
+
+	if s.cfg.CellControlNetwork != "" {
+		endpoints[s.cfg.CellControlNetwork] = &mobynet.EndpointSettings{
+			GwPriority: cellControlGwPriority,
+		}
+	}
+
+	return &mobynet.NetworkingConfig{EndpointsConfig: endpoints}
 }
 
 // Spawner-side polling + probe constants. Pulled into named
@@ -490,7 +509,13 @@ func (s *CellSpawner) waitReady(
 			continue
 		}
 
-		if !s.probeSocks5(ctx, addr) {
+		ready, err := s.probeCellReady(ctx, containerID, addr)
+		if err != nil || !ready {
+			continue
+		}
+
+		gatewayAddr, err := s.resolveGatewayAddr(ctx, containerID, addr)
+		if err != nil || gatewayAddr == "" {
 			continue
 		}
 
@@ -510,6 +535,7 @@ func (s *CellSpawner) waitReady(
 			ContainerID: containerID,
 			ConfName:    req.ConfName,
 			ProxyURL:    proxyURL,
+			GatewayAddr: gatewayAddr,
 			State:       TunnelStateHot,
 			Pool:        req.Pool,
 			ExitCountry: exitCountry,
@@ -518,6 +544,39 @@ func (s *CellSpawner) waitReady(
 			LastUsedAt:  now,
 		}, nil
 	}
+}
+
+// resolveGatewayAddr returns the private cell SOCKS5 endpoint reachable by the
+// controller. In dual-network deployments this is the cell-control IP; the
+// controller deliberately never attaches to the WireGuard egress network.
+func (s *CellSpawner) resolveGatewayAddr(
+	ctx context.Context, containerID, socksAddr string,
+) (string, error) {
+	if s.cfg.CellControlNetwork == "" {
+		return socksAddr, nil
+	}
+
+	info, err := s.docker.ContainerInspect(
+		ctx, containerID, client.ContainerInspectOptions{},
+	)
+	if err != nil {
+		return "", ctxerrors.Wrap(err, "inspect cell control endpoint")
+	}
+
+	if info.Container.NetworkSettings == nil {
+		return "", ctxerrors.Wrap(
+			ErrSpawnFailed, "no NetworkSettings on control endpoint inspect",
+		)
+	}
+
+	endpoint, ok := info.Container.NetworkSettings.Networks[s.cfg.CellControlNetwork]
+	if !ok || endpoint == nil || !endpoint.IPAddress.IsValid() {
+		return "", nil
+	}
+
+	return net.JoinHostPort(
+		endpoint.IPAddress.String(), strconvItoa(s.cfg.CellSocksPort),
+	), nil
 }
 
 // resolveSocksAddr returns the host:port a probe + the returned
@@ -555,6 +614,63 @@ func (s *CellSpawner) resolveSocksAddr(
 	return net.JoinHostPort(
 		bindings[0].HostIP.String(), bindings[0].HostPort,
 	), nil
+}
+
+// probeCellReady reports whether a freshly spawned cell is ready to serve. In
+// single-network mode the controller shares the cell's network, so a SOCKS5 TCP
+// connect is the signal. In dual-network mode the controller reaches the cell
+// only over the internal control network — never its egress SOCKS5 port — so it
+// uses cellproxy's /healthz, which comes up together with the SOCKS5 listener
+// once the WireGuard handshake lands, as the readiness signal instead.
+func (s *CellSpawner) probeCellReady(
+	ctx context.Context, containerID, socksAddr string,
+) (bool, error) {
+	if s.cfg.CellControlNetwork == "" {
+		return s.probeSocks5(ctx, socksAddr), nil
+	}
+
+	info, err := s.docker.ContainerInspect(
+		ctx, containerID, client.ContainerInspectOptions{},
+	)
+	if err != nil {
+		return false, ctxerrors.Wrap(err, "inspect container")
+	}
+
+	controlURL := s.controlURLFromInspect(info)
+	if controlURL == nil {
+		return false, nil
+	}
+
+	return cellControlClient{http: s.http}.Healthy(ctx, controlURL), nil
+}
+
+// controlURLFromInspect resolves the cell's cellproxy control base URL from a
+// container inspect, over the internal control network in dual-network mode. A
+// nil result means the network endpoint has no IP yet, so waitReady retries
+// until the spawn deadline.
+func (s *CellSpawner) controlURLFromInspect(
+	info client.ContainerInspectResult,
+) *url.URL {
+	if info.Container.NetworkSettings == nil {
+		return nil
+	}
+
+	controlNet := s.cfg.CellControlNetwork
+	if controlNet == "" {
+		controlNet = s.cfg.CellNetwork
+	}
+
+	endpoint, ok := info.Container.NetworkSettings.Networks[controlNet]
+	if !ok || endpoint == nil || !endpoint.IPAddress.IsValid() {
+		return nil
+	}
+
+	return &url.URL{
+		Scheme: controlURLScheme,
+		Host: net.JoinHostPort(
+			endpoint.IPAddress.String(), strconvItoa(s.cfg.CellControlPort),
+		),
+	}
 }
 
 // strconvItoa avoids dragging strconv into this file just for one
@@ -809,7 +925,15 @@ func (s *CellSpawner) controlURLFromSummary(c container.Summary) *url.URL {
 		return nil
 	}
 
-	endpoint, ok := c.NetworkSettings.Networks[s.cfg.CellNetwork]
+	// Prefer the internal control network: the controller reaches the cell's
+	// control port there, never over egress. Falls back to the egress network
+	// in single-network mode.
+	controlNetwork := s.cfg.CellNetwork
+	if s.cfg.CellControlNetwork != "" {
+		controlNetwork = s.cfg.CellControlNetwork
+	}
+
+	endpoint, ok := c.NetworkSettings.Networks[controlNetwork]
 	if !ok || endpoint == nil || !endpoint.IPAddress.IsValid() {
 		return nil
 	}

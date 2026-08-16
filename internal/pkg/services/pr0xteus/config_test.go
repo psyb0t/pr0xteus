@@ -112,6 +112,27 @@ func TestLoadConfig_Validation(t *testing.T) {
 			wantErr: ErrConfigInvalid,
 		},
 		{
+			name: "rejects malformed SOCKS listener",
+			configure: func(t *testing.T) {
+				t.Setenv("TUNNEL_POOL_SOCKS_ADDR", "1080")
+			},
+			wantErr: ErrConfigInvalid,
+		},
+		{
+			name: "rejects SOCKS public address without host",
+			configure: func(t *testing.T) {
+				t.Setenv("TUNNEL_POOL_SOCKS_PUBLIC_ADDR", ":1080")
+			},
+			wantErr: ErrConfigInvalid,
+		},
+		{
+			name: "rejects nonpositive proxy lease TTL",
+			configure: func(t *testing.T) {
+				t.Setenv("TUNNEL_POOL_PROXY_LEASE_TTL", "0s")
+			},
+			wantErr: ErrConfigInvalid,
+		},
+		{
 			name: "requires API token",
 			configure: func(t *testing.T) {
 				t.Setenv("PR0XTEUS_API_TOKEN", " ")

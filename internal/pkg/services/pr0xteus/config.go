@@ -2,7 +2,9 @@ package pr0xteus
 
 import (
 	"bytes"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +14,10 @@ import (
 
 const (
 	maxAPITokenBytes = 4096
+
+	defaultSOCKSListenAddr = ":1080"
+	defaultSOCKSPublicAddr = "127.0.0.1:1080"
+	defaultProxyLeaseTTL   = 15 * time.Minute
 
 	// minPort/maxPort bound every operator-supplied TCP port.
 	minPort = 1
@@ -27,6 +33,19 @@ type Config struct {
 	// MetricsAddr exposes unversioned /metrics and /healthz separately from the
 	// authenticated control plane.
 	MetricsAddr string `default:":9091" env:"TUNNEL_POOL_METRICS_ADDR"`
+
+	// SOCKSAddr is the controller-fronted SOCKS5 listener. It selects an
+	// allocated WireGuard cell by the short-lived credentials in the returned
+	// proxy URL, so callers never need Docker network membership.
+	SOCKSAddr string `default:":1080" env:"TUNNEL_POOL_SOCKS_ADDR"`
+
+	// SOCKSPublicAddr is the address clients receive in allocated proxy URLs.
+	// It must match the loopback, reverse-proxy, or tailnet address the operator
+	// deliberately exposes for SOCKS5 traffic.
+	SOCKSPublicAddr string `default:"127.0.0.1:1080" env:"TUNNEL_POOL_SOCKS_PUBLIC_ADDR"`
+
+	// ProxyLeaseTTL limits how long an allocated SOCKS5 URL can be reused.
+	ProxyLeaseTTL time.Duration `default:"15m" env:"TUNNEL_POOL_PROXY_LEASE_TTL"`
 
 	// PoolsFile is the ignored, operator-managed pool definition file.
 	PoolsFile string `default:"secrets/pools.yaml" env:"TUNNEL_POOL_POOLS_FILE"`
@@ -80,6 +99,15 @@ type Config struct {
 	// CellNetwork is the Docker network where cells and consumers meet. Empty
 	// enables the deliberately limited host-loopback smoke-test mode.
 	CellNetwork string `default:"" env:"PR0XTEUS_CELL_NETWORK"`
+
+	// CellControlNetwork is an internal Docker network that carries only the
+	// controller↔cell control-plane traffic (cellproxy /healthz + /status). When
+	// set, cells join both CellNetwork (egress: WireGuard dial + SOCKS5 to
+	// callers) and this network, and the controller reaches each cell's control
+	// port over here instead of over the egress network — so the controller
+	// itself needs no attachment to the egress network at all. Empty keeps the
+	// single-network behavior (control port reached over CellNetwork).
+	CellControlNetwork string `default:"" env:"PR0XTEUS_CELL_CONTROL_NETWORK"`
 
 	// ManagedScope separates this controller's cells from another controller on
 	// the same Docker daemon. It is especially important for isolated test runs.
@@ -139,6 +167,20 @@ func LoadConfig() (Config, error) {
 
 // validatePorts checks the in-container cell ports are in range and distinct.
 func (cfg *Config) validatePorts() error {
+	if err := validateTCPAddress(cfg.SOCKSAddr, true, "TUNNEL_POOL_SOCKS_ADDR"); err != nil {
+		return err
+	}
+
+	if err := validateTCPAddress(cfg.SOCKSPublicAddr, false, "TUNNEL_POOL_SOCKS_PUBLIC_ADDR"); err != nil {
+		return err
+	}
+
+	if cfg.ProxyLeaseTTL <= 0 {
+		return ctxerrors.Wrap(
+			ErrConfigInvalid, "TUNNEL_POOL_PROXY_LEASE_TTL must be positive",
+		)
+	}
+
 	if cfg.CellSocksPort < minPort || cfg.CellSocksPort > maxPort {
 		return ctxerrors.Wrap(
 			ErrConfigInvalid, "PR0XTEUS_CELL_SOCKS_PORT must be in 1..65535",
@@ -159,6 +201,48 @@ func (cfg *Config) validatePorts() error {
 	}
 
 	return nil
+}
+
+func validateTCPAddress(address string, allowEmptyHost bool, envName string) error {
+	host, rawPort, err := net.SplitHostPort(address)
+	if err != nil {
+		return ctxerrors.Wrapf(ErrConfigInvalid, "%s must be host:port", envName)
+	}
+
+	if !allowEmptyHost && strings.TrimSpace(host) == "" {
+		return ctxerrors.Wrapf(ErrConfigInvalid, "%s host is required", envName)
+	}
+
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port < minPort || port > maxPort {
+		return ctxerrors.Wrapf(ErrConfigInvalid, "%s port must be in 1..65535", envName)
+	}
+
+	return nil
+}
+
+func (cfg Config) socksPublicAddr() string {
+	if cfg.SOCKSPublicAddr != "" {
+		return cfg.SOCKSPublicAddr
+	}
+
+	return defaultSOCKSPublicAddr
+}
+
+func (cfg Config) socksListenAddr() string {
+	if cfg.SOCKSAddr != "" {
+		return cfg.SOCKSAddr
+	}
+
+	return defaultSOCKSListenAddr
+}
+
+func (cfg Config) proxyLeaseTTL() time.Duration {
+	if cfg.ProxyLeaseTTL > 0 {
+		return cfg.ProxyLeaseTTL
+	}
+
+	return defaultProxyLeaseTTL
 }
 
 // resolveParentID fills ParentID from the controller's hostname when the

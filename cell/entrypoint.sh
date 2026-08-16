@@ -24,8 +24,9 @@
 #      ESTABLISHED,RELATED; wg0 never accepts a NEW inbound connection,
 #      so cellproxy's SOCKS5 + control ports stay unreachable from the
 #      tunnel (egress) side.
-#   7. Accept new inbound for the SOCKS5 + control ports on eth0 only
-#      (the docker network the controller shares).
+#   7. Accept new inbound: SOCKS5 on the egress interface for intentional
+#      direct Docker consumers and on the internal control interface for the
+#      controller gateway; the control port stays on the control interface.
 #   8. Switch /etc/resolv.conf to the WG-supplied DNS.
 #   9. Drop privileges and start cellproxy.
 #
@@ -141,7 +142,17 @@ log DEBUG "WireGuard endpoint resolved"
 EGRESS_IF=$(ip route show default | awk 'NR == 1 {value = $5} END {print value}')
 EGRESS_IF="${EGRESS_IF:-eth0}"
 EGRESS_GW=$(ip route show default | awk 'NR == 1 {value = $3} END {print value}')
-log DEBUG "host egress interface selected"
+
+# The control interface is the cell's second docker network — the internal
+# cell-control net, present when the controller runs in dual-network mode: the
+# first IPv4-addressed interface that is neither loopback nor the egress iface
+# (wg0 does not exist yet here). Empty means single-network mode, where the
+# control port shares the egress interface. awk consumes all input (no early
+# exit) so pipefail never sees a SIGPIPE on the upstream `ip`.
+CONTROL_IF=$(ip -o -4 addr show | awk -v egress="$EGRESS_IF" \
+	'$2 != "lo" && $2 != egress && !found { print $2; found = 1 }')
+CONTROL_IF="${CONTROL_IF:-$EGRESS_IF}"
+log DEBUG "cell network interfaces selected"
 
 # ─── 2. Default DROP on every chain ──────────────────────────────
 log INFO "installing tunnel kill-switch"
@@ -232,13 +243,17 @@ wait_for_handshake
 # provider. New inbound is accepted only on eth0, below.
 iptables -A OUTPUT -o wg0 -j ACCEPT
 
-# ─── 7. Inbound SOCKS5 + control HTTP from the docker network ──
-# Both listen on eth0 (the cell network the controller shares). This is
-# the ONLY chain that accepts a new inbound connection, so the control
-# server is reachable only by the controller, never the egress peer.
+# ─── 7. Inbound SOCKS5 + control HTTP from the docker networks ──
+# SOCKS5 is accepted on the egress interface for direct Docker-network users and
+# on the internal controller network for the controller-fronted gateway. The
+# control server (/healthz + /status) stays on that internal network. New
+# inbound is never accepted on wg0, so neither service is exposed through the
+# WireGuard exit.
 iptables -A INPUT -i "${EGRESS_IF}" \
 	-p tcp --dport "${SOCKS5_PORT}" -j ACCEPT
-iptables -A INPUT -i "${EGRESS_IF}" \
+iptables -A INPUT -i "${CONTROL_IF}" \
+	-p tcp --dport "${SOCKS5_PORT}" -j ACCEPT
+iptables -A INPUT -i "${CONTROL_IF}" \
 	-p tcp --dport "${CONTROL_PORT}" -j ACCEPT
 
 # ─── 8. Resolv.conf points at WG DNS only (no DNS leak) ────────

@@ -345,13 +345,24 @@ compose() {
     "${command[@]}" "$@"
 }
 
+config_command() {
+    local config_dir="$1" image="$2"
+    shift 2
+
+    local wrap owner
+    wrap="$(root_wrap "$config_dir")"
+    if [[ -n "$wrap" ]]; then owner="0:0"; else owner="$(id -u):$(id -g)"; fi
+
+    $wrap docker run --rm \
+        --user "$owner" \
+        -v "$config_dir:/config" \
+        "$image" config "$@" --config-dir /config
+}
+
 setup() {
-    local config_dir image wrap owner
+    local config_dir image wrap
     config_dir="$(config_directory)"
     wrap="$(root_wrap "$config_dir")"
-    # System config (sudo-wrapped /etc) is root-owned then group-shared; per-user
-    # config is owned by the current user so they can edit it.
-    if [[ -n "$wrap" ]]; then owner="0:0"; else owner="$(id -u):$(id -g)"; fi
 
     $wrap mkdir -p "$config_dir"
     image="$(controller_image "$config_dir")"
@@ -359,11 +370,7 @@ setup() {
     say "pulling $image"
     docker pull "$image"
     say "writing config into $config_dir"
-    $wrap docker run --rm \
-        --user "$owner" \
-        -v "$config_dir:/config" \
-        "$image" config init \
-        --config-dir /config \
+    config_command "$config_dir" "$image" init \
         --host-config-dir "$config_dir" \
         --controller-image "$image"
 
@@ -459,6 +466,9 @@ upgrade() {
     if [[ "${PR0XTEUS_ROLLING:-}" == "1" ]]; then
         warn "pulling the rolling :latest image (recorded pin unchanged)"
         docker pull "$ROLLING_IMAGE"
+        config_command "$config_dir" "$ROLLING_IMAGE" init \
+            --host-config-dir "$config_dir" \
+            --controller-image "$ROLLING_IMAGE"
         export PR0XTEUS_CONTROLLER_IMAGE="$ROLLING_IMAGE"
         compose "$config_dir" up --detach
         compose "$config_dir" ps
@@ -477,6 +487,9 @@ upgrade() {
 
     say "pinning to $new_image"
     docker pull "$new_image"
+    config_command "$config_dir" "$new_image" init \
+        --host-config-dir "$config_dir" \
+        --controller-image "$new_image"
     env_set "$config_dir" PR0XTEUS_CONTROLLER_IMAGE "$new_image"
     export PR0XTEUS_CONTROLLER_IMAGE="$new_image"
     compose "$config_dir" up --detach

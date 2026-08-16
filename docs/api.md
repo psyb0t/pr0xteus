@@ -4,7 +4,7 @@ The control API is a small private HTTP API. It is versioned under `/v1`,
 requires `Authorization: Bearer <token>` on every route, and is loopback-bound
 by the supplied Compose stack.
 
-For a safe manual request and a real private-network SOCKS5 proof, follow
+For a safe manual request and a real SOCKS5 egress proof, follow
 [complete-example.md](complete-example.md). The handler and pool state behind
 these routes are documented in [internal/README.md](../internal/pkg/services/pr0xteus/README.md).
 
@@ -17,7 +17,7 @@ Request exactly one selection method:
 ```
 
 ```json
-{"pool":"primary","excludeProxy":"socks5://pr0xteus-tunnel-primary-123:1080"}
+{"pool":"primary","excludeProxy":"socks5://lease-id:lease-secret@127.0.0.1:1080"}
 ```
 
 Fields:
@@ -37,14 +37,50 @@ Successful response:
 
 ```json
 {
-  "url": "socks5://pr0xteus-tunnel-primary-123:1080",
+  "url": "socks5://lease-id:lease-secret@127.0.0.1:1080",
   "pool": "primary",
-  "exitCountry": "US"
+  "exitCountry": "US",
+  "expiresAt": "2026-01-01T00:15:00Z"
 }
 ```
 
-`exitIP` is reserved optional metadata and is normally omitted; the controller
-does not make an external exit-IP lookup. Do not make correctness depend on it.
+The URL points at the controller's SOCKS5 gateway, carries a random short-lived
+username/password lease, and routes only to the exact cell selected for this
+allocation. Keep it out of logs. A lease never silently switches to a
+replacement cell. `exitIP` is reserved optional metadata and is normally
+omitted; the controller does not make an external exit-IP lookup. Do not make
+correctness depend on it.
+
+## `GET /v1/proxies`
+
+Returns the flattened inventory of currently active tunnels. It is paginated
+with `limit` (default `100`, maximum `1000`) and `offset` (default `0`). It is
+read-only: it never starts a cell and never issues a new lease.
+
+```json
+{
+  "proxies": [
+    {
+      "pool": "primary",
+      "confName": "edge-a",
+      "state": "hot",
+      "exitCountry": "US",
+      "spawnedAt": "2026-01-01T00:00:00Z",
+      "healthyAt": "2026-01-01T00:00:05Z",
+      "lastUsedAt": "2026-01-01T00:01:00Z",
+      "lastURL": "socks5://lease-id:lease-secret@127.0.0.1:1080",
+      "lastURLExpiresAt": "2026-01-01T00:16:00Z",
+      "idleSeconds": 12.3
+    }
+  ],
+  "limit": 100,
+  "offset": 0,
+  "total": 1
+}
+```
+
+`lastURL` is omitted until an allocation has been made. It is a live
+credential, so this endpoint has the same bearer-token protection as allocation.
 
 ## `GET /v1/pools`
 
@@ -73,8 +109,9 @@ Typical response:
 }
 ```
 
-This is an operator view, not a public proxy directory. The proxy hostname is
-usable only from the private egress Docker network.
+This is an operator view, not the client-facing proxy inventory. `proxyUrl` is
+the cell's internal SOCKS endpoint; use `POST /v1/proxies` for a client URL and
+`GET /v1/proxies` for allocation history.
 
 ## `GET /v1/cells`
 

@@ -108,14 +108,16 @@ func TestRealSurfshark_ChangesPublicEgressIP(t *testing.T) {
 	require.Equal(t, "socks5", proxyURL.Scheme)
 	require.NotEmpty(t, proxyURL.Host)
 
-	directIP, err := observedPublicIP(ctx, "")
+	directIP, err := observedPublicIP(ctx, "", true)
 	require.NoError(t, err)
-	proxiedIP, err := observedPublicIP(ctx, proxyURL.Host)
+	proxiedIP, err := observedPublicIP(ctx, assignment.URL, false)
 	require.NoError(t, err)
 	require.NotEqual(t, directIP, proxiedIP)
 }
 
-func observedPublicIP(ctx context.Context, proxyAddress string) (netip.Addr, error) {
+func observedPublicIP(
+	ctx context.Context, proxyAddress string, direct bool,
+) (netip.Addr, error) {
 	arguments := []string{
 		"curl",
 		"--ipv4",
@@ -126,11 +128,19 @@ func observedPublicIP(ctx context.Context, proxyAddress string) (netip.Addr, err
 		"--show-error",
 	}
 	if proxyAddress != "" {
-		arguments = append(arguments, "--socks5-hostname", proxyAddress)
+		arguments = append(arguments, "--proxy", proxyAddress)
 	}
 	arguments = append(arguments, publicIPEndpoint)
 
-	exitCode, output, err := realInfra.Consumer.Exec(
+	consumer := realInfra.Consumer
+	if direct {
+		consumer = realInfra.DirectConsumer
+	}
+	if consumer == nil {
+		return netip.Addr{}, ctxerrors.New("public IP test consumer is not running")
+	}
+
+	exitCode, output, err := consumer.Exec(
 		ctx, arguments, tcexec.Multiplexed(),
 	)
 	if err != nil {

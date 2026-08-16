@@ -23,10 +23,11 @@ stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
 `/etc/pr0xteus` instead of `~/.config/pr0xteus`.
 
 The installer creates `~/.config/pr0xteus/`, writes the local `docker-compose.yml`,
-and adds the `pr0xteus` command. It preserves config on a later run. It creates
-`.env`, pool and routing skeletons, and empty `secrets/wireguard/`; it never
-manufactures a provider configuration. The random bearer token is written
-directly to owner-only `~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
+and adds the `pr0xteus` command. It preserves real config on a later run. It
+creates `.env`, refreshes `.env.example`, creates pool and routing skeletons,
+and creates empty `secrets/wireguard/`; it never manufactures a provider
+configuration. The random bearer token is written directly to owner-only
+`~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
 
 Add real `*.conf` files under `~/.config/pr0xteus/secrets/wireguard/`, then change
 `~/.config/pr0xteus/secrets/pools.yaml` and
@@ -104,9 +105,11 @@ curl --fail-with-body \
 unset token
 ```
 
-The returned `socks5://...` URL works from an authorized container attached to
-`pr0xteus-egress`, not from the host. Do not publish a cell port or expose the
-controller API beyond an authenticated private boundary.
+The returned `socks5://...` URL is a short-lived controller SOCKS gateway
+lease and works from the host or another trusted client that can reach the
+gateway. The controller forwards it to the selected cell through the internal
+cell-control network; do not publish a cell port or expose the controller API
+beyond an authenticated private boundary.
 
 ## Operations
 

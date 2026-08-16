@@ -144,6 +144,92 @@ func TestCellSpawner_BuildHostConfigForPrivateNetwork(t *testing.T) {
 	assert.Contains(t, networkingConfig.EndpointsConfig, spawner.cfg.CellNetwork)
 }
 
+func TestCellSpawner_DualNetworkAttachesBothWithEgressGateway(t *testing.T) {
+	t.Parallel()
+
+	spawner := &CellSpawner{
+		cfg: Config{
+			CellImage:          "psyb0t/pr0xteus:cell-v0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			CellNetwork:        "pr0xteus-egress",
+			CellControlNetwork: "pr0xteus-cell-control",
+			CellSocksPort:      1080,
+			CellControlPort:    9090,
+			ManagedScope:       "test-scope",
+		},
+	}
+
+	// In dual-network mode NetworkMode is left unset: naming a single network
+	// there alongside a second endpoint is rejected by the daemon.
+	hostConfig := spawner.buildHostConfig("/tmp/selected.conf")
+	assert.Empty(t, string(hostConfig.NetworkMode))
+
+	networkingConfig := spawner.buildNetworkingConfig()
+	require.NotNil(t, networkingConfig)
+	require.Contains(t, networkingConfig.EndpointsConfig, spawner.cfg.CellNetwork)
+	require.Contains(t, networkingConfig.EndpointsConfig, spawner.cfg.CellControlNetwork)
+
+	egress := networkingConfig.EndpointsConfig[spawner.cfg.CellNetwork]
+	control := networkingConfig.EndpointsConfig[spawner.cfg.CellControlNetwork]
+	assert.Equal(t, cellEgressGwPriority, egress.GwPriority)
+	assert.Equal(t, cellControlGwPriority, control.GwPriority)
+	// Egress must outrank control so the cell's default route (its WireGuard
+	// dial) always leaves via egress, never the routeless internal network.
+	assert.Greater(t, egress.GwPriority, control.GwPriority)
+
+	// The control URL resolves over the control network's IP, never egress.
+	summary := container.Summary{
+		NetworkSettings: &container.NetworkSettingsSummary{
+			Networks: map[string]*mobynet.EndpointSettings{
+				spawner.cfg.CellNetwork:        {IPAddress: netip.MustParseAddr("10.8.0.5")},
+				spawner.cfg.CellControlNetwork: {IPAddress: netip.MustParseAddr("10.9.0.5")},
+			},
+		},
+	}
+
+	controlURL := spawner.controlURLFromSummary(summary)
+	require.NotNil(t, controlURL)
+	assert.Equal(t, controlURLScheme, controlURL.Scheme)
+	assert.Equal(t, "10.9.0.5:9090", controlURL.Host)
+}
+
+func TestCellSpawner_ControlURLFromInspectPrefersControlNetwork(t *testing.T) {
+	t.Parallel()
+
+	spawner := &CellSpawner{cfg: Config{
+		CellNetwork:        "pr0xteus-egress",
+		CellControlNetwork: "pr0xteus-cell-control",
+		CellControlPort:    9090,
+	}}
+
+	controlURL := spawner.controlURLFromInspect(mobyclient.ContainerInspectResult{
+		Container: container.InspectResponse{
+			NetworkSettings: &container.NetworkSettings{
+				Networks: map[string]*mobynet.EndpointSettings{
+					"pr0xteus-egress":       {IPAddress: netip.MustParseAddr("10.8.0.5")},
+					"pr0xteus-cell-control": {IPAddress: netip.MustParseAddr("10.9.0.7")},
+				},
+			},
+		},
+	})
+	require.NotNil(t, controlURL)
+	assert.Equal(t, "10.9.0.7:9090", controlURL.Host)
+
+	// No control-network endpoint yet → nil, so waitReady retries.
+	pending := spawner.controlURLFromInspect(mobyclient.ContainerInspectResult{
+		Container: container.InspectResponse{
+			NetworkSettings: &container.NetworkSettings{
+				Networks: map[string]*mobynet.EndpointSettings{
+					"pr0xteus-egress": {IPAddress: netip.MustParseAddr("10.8.0.5")},
+				},
+			},
+		},
+	})
+	assert.Nil(t, pending)
+
+	// No network settings at all → nil.
+	assert.Nil(t, spawner.controlURLFromInspect(mobyclient.ContainerInspectResult{}))
+}
+
 func TestCellSpawner_BuildsLoopbackContainerConfiguration(t *testing.T) {
 	t.Parallel()
 

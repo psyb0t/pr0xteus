@@ -16,7 +16,10 @@ func buildConfigCommand() *cobra.Command {
 		Short: "Create or validate local deployment configuration",
 	}
 
-	command.AddCommand(buildConfigInitCommand(), buildConfigCheckCommand())
+	command.AddCommand(
+		buildConfigInitCommand(),
+		buildConfigCheckCommand(),
+	)
 
 	return command
 }
@@ -40,6 +43,9 @@ func buildConfigInitCommand() *cobra.Command {
 
 			for _, path := range result.Preserved {
 				command.Printf("preserved %s\n", path)
+			}
+			for _, path := range result.Refreshed {
+				command.Printf("refreshed %s\n", path)
 			}
 
 			command.Println("add an authorized WireGuard .conf, update pools.yaml, then run config check")

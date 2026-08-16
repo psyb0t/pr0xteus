@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.6.0 — 2026-08-16
+
+**Breaking before 1.0:** `POST /v1/proxies` no longer returns a cell hostname
+usable only inside Docker. It now returns a short-lived, credentialed
+controller SOCKS5 URL. Pass the full returned URL to your SOCKS client (for
+example, `curl --proxy "$url" …`); callers no longer need membership of the
+cell egress network.
+
+- Added a loopback-published, lease-authenticated controller SOCKS5 gateway.
+  A random URL is bound to exactly one selected cell, expires after the
+  configured TTL, accepts TCP CONNECT only, and sends destination DNS plus
+  egress through that cell's WireGuard interface.
+- Added `GET /v1/proxies`, a bounded, read-only active-proxy inventory with
+  pool, cell state, exit metadata, last use, and the latest issued URL plus its
+  expiry. It never allocates a new cell or credential.
+- The controller now runs only on the internal cell-control network; it has no
+  egress-network route or destination DNS resolution. Cells join that network
+  alongside egress, and the controller gateway reaches their private SOCKS5
+  listeners there.
+- Added gateway and lease regression coverage, including invalid credentials,
+  expiry, no controller-side DNS, real controller→cell proxying, and a
+  real-provider test topology with a separate direct baseline client.
+- Updated the image-first quick start, deployment guide, architecture, API
+  reference, and agent skill for host or trusted-client SOCKS usage.
+
 ## v0.5.0 — 2026-08-16
 
 Security + reliability hardening. No REST/MCP contract change and no config

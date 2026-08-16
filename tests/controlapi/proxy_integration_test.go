@@ -27,8 +27,9 @@ func TestControlAPI_AllocatesLiveWireGuardSOCKS5Proxy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "socks5", proxyURL.Scheme)
 	require.NotEmpty(t, proxyURL.Host)
+	require.NotNil(t, proxyURL.User)
 
-	require.NoError(t, infra.AssertProxyEgress(ctx, proxyURL.Host))
+	require.NoError(t, infra.AssertProxyEgress(ctx, assignment.URL))
 
 	// GET /v1/pools — the operator pool view lists the configured pool.
 	poolNames, err := infra.PoolNames(ctx)

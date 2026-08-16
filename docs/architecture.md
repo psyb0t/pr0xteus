@@ -1,8 +1,10 @@
 # Architecture
 
-pr0xteus is a control plane, not a proxy. The controller decides *which*
-tunnel a caller gets; it never forwards a byte of that caller's traffic.
-This document is the data-path/control-path split and the component
+pr0xteus is a private controller-fronted proxy. The controller decides *which*
+tunnel a caller gets, authenticates a short-lived SOCKS5 lease, and relays that
+connection to the selected cell. It never has an egress-network route, resolves
+client DNS, or talks to a destination directly. This document is the
+data-path/control-path split and the component
 boundaries. Route detail lives in [docs/api.md](api.md), deployment lives in
 [docs/deploy.md](deploy.md), the full setup+egress walkthrough is
 [docs/complete-example.md](complete-example.md), and implementation detail is
@@ -13,42 +15,34 @@ the [cell README](../cell/README.md).
 
 ```text
                      control path (HTTP, bearer token)
-trusted client ─────────────────────────────► controller
-                                                  │  validates request,
-                                                  │  picks a pool config,
-                                                  │  spawns/monitors cells
+trusted client ─────────────────────────────► controller ──► socket proxy ──► dockerd
+                                                  │ validates request, picks a pool, spawns/monitors cells
                                                   │
-                                    Docker API    ▼
-                              controller ──► socket proxy ──► dockerd
-                                                  │
-                                                  ▼
-                                                cell (container)
-                                             ┌────┴────┐
-                              data path      │ wg0     │  WireGuard peer
-                              (SOCKS5,       │ cellproxy│  SOCKS5 + control HTTP
-                               never         └────┬────┘
-                               touches            │
-                               controller)        ▼
-                                            configured VPN endpoint
+data path (lease-authenticated SOCKS5)             │ private cell-control network
+trusted client ─────────────────────────────► controller ───────────────────► cell ──► wg0 ──► VPN peer
+                                                  │                              SOCKS5 and DNS
+                                                  └── no egress-network attachment or destination DNS
 ```
 
-`POST /v1/proxies` returns a `socks5://<container>:1080` URL; the caller then
-dials that URL **directly** on the `pr0xteus-egress` network. The controller
-is not in that connection at all — it already handed the caller the address
-and moved on. What the controller does keep doing is *control*-path work:
-discovering cells, scraping their traffic snapshots, deciding when to reap
-them. See [How it is wired](../README.md#how-it-is-wired) for the short
-version and `POST /v1/proxies` in [docs/api.md](api.md) for the exact
-request/response contract.
+`POST /v1/proxies` returns a
+`socks5://<lease-id>:<lease-secret>@127.0.0.1:1080` URL by default. The caller
+dials that URL from the host or another reachable trusted client; the
+controller validates the one-cell lease and connects to that cell's private
+SOCKS listener across `pr0xteus-cell-control`. The selected cell resolves the
+destination and sends traffic through `wg0`. The controller continues its
+control-path work too: discovering cells, scraping traffic snapshots, and
+deciding when to reap them.
 
 ## Components
 
 **Controller** (`internal/pkg/services/pr0xteus/`) — one Go service. It:
 
 - validates `POST /v1/proxies` bodies, selects an approved pool/config, and
-  returns a private SOCKS5 URL only after the cell's WireGuard handshake
-  completed and its SOCKS5 listener is open
+  issues a random, short-lived SOCKS5 lease only after the cell's WireGuard
+  handshake completed and its SOCKS5 listener is open
   (`spawner.go` `waitReady`/`probeSocks5`);
+- authenticates the lease and relays TCP CONNECT to that exact cell through
+  the internal cell-control network without resolving destination DNS;
 - owns two background loops plus an orphan reconciler run by the `Reaper`:
   an idle loop that kills cells past `IdleTimeout` with zero in-flight
   requests *and* no live connections reported by cellproxy, and a health
@@ -81,8 +75,11 @@ interface. Every dial goes through a recording wrapper: a failed dial marks
 byte/request-counting `net.Conn` so `/status` can report per-destination
 traffic (`proxy.go` `dial`, `conn.go`). A second HTTP server on the same
 process serves `/healthz` (plain liveness) and `/status` (uptime + traffic
-snapshot, `CellID`/`ParentID` echoed back) — bound to the cell's Docker
-network interface only, never to `wg0` (`cell/entrypoint.sh` step 7).
+snapshot, `CellID`/`ParentID` echoed back) — the entrypoint firewall accepts
+both the control port and SOCKS5 port on the internal cell-control interface
+for the controller gateway, plus SOCKS5 on egress for an intentional direct
+Docker-network deployment. Neither port is accepted on `wg0` (the tunnel side)
+(`cell/entrypoint.sh` step 7).
 
 ## Discovery and reaping: Docker labels, not a registry
 
@@ -98,8 +95,8 @@ that label filter straight from Docker (`spawner.go` `ListChildren`,
 `cells.go` `Cells`/`CellByID`). A restarted controller rediscovers its live
 cells on the next tick — nothing to rebuild from a database — and
 `pr0xteus.scope` keeps two controllers sharing a daemon from ever touching
-each other's cells. Each cell's control address is resolved on demand from
-its current IP on the shared cell network, never cached
+each other's cells. Each cell's control address is resolved on demand from its
+current IP on the internal cell-control network, never cached
 (`spawner.go` `controlURLFromSummary`).
 
 Reaping uses real signals, not just a timer. `reapIdle` requires `IdleTimeout`
@@ -116,26 +113,29 @@ restarts (`reaper.go` `orphanLoop`, `spawner.go` `ReapOrphans`).
 
 ## Networks and trust boundaries
 
-Three Docker networks, declared in `docker-compose.yml`:
+Four Docker networks, declared in `docker-compose.yml`:
 
 - `pr0xteus-control` — `internal: true`. Controller ↔ socket-proxy ↔
   (optional) Tailscale sidecar. No route out of Docker.
+- `pr0xteus-cell-control` — `internal: true`. Carries controller↔cell health
+  checks, traffic status, and controller-gateway→cell SOCKS5 traffic. Cells
+  join it alongside egress. The controller does **not** join egress, so an
+  RCE/SSRF in the controller has no NAT route out of Docker.
 - `pr0xteus-egress` — not internal; cells need real internet reachability to
-  dial their configured WireGuard endpoint *before* the tunnel exists. This
-  is also the network trusted callers attach to when consuming the returned
-  `socks5://` URL.
+  dial their configured WireGuard endpoint *before* the tunnel exists. Direct
+  Docker-network consumers may join it intentionally, but normal callers use
+  the controller's published SOCKS gateway. The controller never joins it.
 - `pr0xteus-tailnet` — optional, only reachable by the Tailscale sidecar
   (`--profile tailscale`), for exposing the control API off-host without a
   published port. See [Tailscale](../README.md#tailscale) and
   [docs/deploy.md](deploy.md).
 
-The controller API (`:8000`) and metrics listener (`:9091`) publish only to
-`127.0.0.1` in the supplied Compose stack (`docker-compose.yml` `ports:`).
-Everything downstream of that binding — bearer-token validation, pool
-selection, cell spawn/reap — is controller-trusted; everything downstream of
-a returned SOCKS5 URL is Docker-network-trusted, not controller-trusted. That
-split is the whole point of putting a control plane in front of raw WireGuard
-access.
+The controller API (`:8000`), metrics listener (`:9091`), and SOCKS gateway
+(`:1080`) publish only to `127.0.0.1` in the supplied Compose stack
+(`docker-compose.yml` `ports:`). Everything downstream of the HTTP binding —
+bearer-token validation and pool selection — is controller-trusted. The SOCKS
+gateway admits only random per-allocation leases, forwards only TCP CONNECT,
+and leaves destination resolution and egress to the selected WireGuard cell.
 
 ## Kill-switch
 

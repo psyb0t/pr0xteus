@@ -57,7 +57,7 @@ const (
 )
 
 // ProxyAssignment is the production HTTP response returned after the
-// controller creates a private, handshake-ready SOCKS5 cell.
+// controller creates a handshake-ready, controller-fronted SOCKS5 lease.
 type ProxyAssignment struct {
 	URL         string `json:"url"`
 	Pool        string `json:"pool"`
@@ -103,10 +103,15 @@ func WithExternalProvider(config ExternalProviderConfig) SetupOption {
 // Infra owns one full, isolated controller → WireGuard cell → SOCKS5 test
 // stack. TestMain creates it once per package and must call Teardown.
 type Infra struct {
-	Controller testcontainers.Container
-	Consumer   testcontainers.Container
-	Peer       testcontainers.Container
-	Network    *testcontainers.DockerNetwork
+	Controller     testcontainers.Container
+	Consumer       testcontainers.Container
+	DirectConsumer testcontainers.Container
+	Peer           testcontainers.Container
+	Network        *testcontainers.DockerNetwork
+	// ControlNetwork mirrors production's internal cell-control network: cells
+	// join it alongside Network, and the controller reaches their control ports
+	// over it rather than over the egress Network.
+	ControlNetwork *testcontainers.DockerNetwork
 
 	APIToken string
 
@@ -180,6 +185,12 @@ func (i *Infra) setup(ctx context.Context) error {
 	}
 	i.Network = createdNetwork
 
+	controlNetwork, err := network.New(ctx, network.WithAttachable())
+	if err != nil {
+		return ctxerrors.Wrap(err, "create integration control network")
+	}
+	i.ControlNetwork = controlNetwork
+
 	if i.externalProvider == nil {
 		if err := i.setupPeer(ctx); err != nil {
 			return ctxerrors.Wrap(err, "start WireGuard peer")
@@ -192,6 +203,12 @@ func (i *Infra) setup(ctx context.Context) error {
 
 	if err := i.setupConsumer(ctx); err != nil {
 		return ctxerrors.Wrap(err, "start SOCKS5 consumer")
+	}
+
+	if i.externalProvider != nil {
+		if err := i.setupDirectConsumer(ctx); err != nil {
+			return ctxerrors.Wrap(err, "start direct egress consumer")
+		}
 	}
 
 	return nil
@@ -296,22 +313,25 @@ func (i *Infra) setupController(ctx context.Context) error {
 		"PR0XTEUS_API_TOKEN":                 i.APIToken,
 		"PR0XTEUS_CELL_IMAGE":                cellImage,
 		"PR0XTEUS_CELL_NETWORK":              i.Network.Name,
+		"PR0XTEUS_CELL_CONTROL_NETWORK":      i.ControlNetwork.Name,
 		// Intentionally the raw host socket, not the socket-proxy: Testcontainers
 		// needs real Docker access to spawn cell containers, so this suite never
 		// exercises the socket-proxy allowlist boundary. That boundary is
 		// verified separately by `make audit-compose` / scripts/audit-compose.sh.
-		"PR0XTEUS_DOCKER_HOST":      "unix:///var/run/docker.sock",
-		"PR0XTEUS_MANAGED_SCOPE":    filepath.Base(i.workDir),
-		"TUNNEL_POOL_DEFAULT_POOL":  "integration",
-		"TUNNEL_POOL_BUNDLE_DIR":    bundleDir,
-		"TUNNEL_POOL_LISTEN_ADDR":   ":8000",
-		"TUNNEL_POOL_METRICS_ADDR":  ":9091",
-		"TUNNEL_POOL_POOLS_FILE":    poolsFile,
-		"TUNNEL_POOL_ROUTING_FILE":  routingFile,
-		"TUNNEL_POOL_SPAWN_TIMEOUT": "2m",
-		"LOG_ADD_SOURCE":            "true",
-		"LOG_FORMAT":                "json",
-		"LOG_LEVEL":                 "info",
+		"PR0XTEUS_DOCKER_HOST":          "unix:///var/run/docker.sock",
+		"PR0XTEUS_MANAGED_SCOPE":        filepath.Base(i.workDir),
+		"TUNNEL_POOL_DEFAULT_POOL":      "integration",
+		"TUNNEL_POOL_BUNDLE_DIR":        bundleDir,
+		"TUNNEL_POOL_LISTEN_ADDR":       ":8000",
+		"TUNNEL_POOL_METRICS_ADDR":      ":9091",
+		"TUNNEL_POOL_SOCKS_ADDR":        ":1080",
+		"TUNNEL_POOL_SOCKS_PUBLIC_ADDR": controllerAlias + ":1080",
+		"TUNNEL_POOL_POOLS_FILE":        poolsFile,
+		"TUNNEL_POOL_ROUTING_FILE":      routingFile,
+		"TUNNEL_POOL_SPAWN_TIMEOUT":     "2m",
+		"LOG_ADD_SOURCE":                "true",
+		"LOG_FORMAT":                    "json",
+		"LOG_LEVEL":                     "info",
 	}
 	if i.coverageOutput != "" {
 		dockerfile = controllerCoverageDockerfile
@@ -328,9 +348,9 @@ func (i *Infra) setupController(ctx context.Context) error {
 				KeepImage:  false,
 			},
 			Env:      env,
-			Networks: []string{i.Network.Name},
+			Networks: []string{i.ControlNetwork.Name},
 			NetworkAliases: map[string][]string{
-				i.Network.Name: {controllerAlias},
+				i.ControlNetwork.Name: {controllerAlias},
 			},
 			HostConfigModifier: func(hostConfig *container.HostConfig) {
 				hostConfig.Binds = append(
@@ -396,7 +416,7 @@ func (i *Infra) setupConsumer(ctx context.Context) error {
 			Image:      curlImage,
 			Entrypoint: []string{"/bin/sh", "-c"},
 			Cmd:        []string{"while :; do sleep 600; done"},
-			Networks:   []string{i.Network.Name},
+			Networks:   []string{i.ControlNetwork.Name},
 		},
 		Started: true,
 	})
@@ -405,6 +425,30 @@ func (i *Infra) setupConsumer(ctx context.Context) error {
 	}
 	if err != nil {
 		return ctxerrors.Wrap(err, "create SOCKS5 consumer container")
+	}
+
+	return nil
+}
+
+// setupDirectConsumer provides the real-provider suite with a baseline IP
+// probe on the cell egress network. Normal integration tests intentionally do
+// not create it: their only client proves a controller-fronted lease works
+// without egress-network membership.
+func (i *Infra) setupDirectConsumer(ctx context.Context) error {
+	consumer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      curlImage,
+			Entrypoint: []string{"/bin/sh", "-c"},
+			Cmd:        []string{"while :; do sleep 600; done"},
+			Networks:   []string{i.Network.Name},
+		},
+		Started: true,
+	})
+	if consumer != nil {
+		i.DirectConsumer = consumer
+	}
+	if err != nil {
+		return ctxerrors.Wrap(err, "create direct egress consumer container")
 	}
 
 	return nil
@@ -716,10 +760,10 @@ func (i *Infra) curlStatus(
 	return code, nil
 }
 
-// AssertProxyEgress proves a returned private SOCKS5 URL routes a request
+// AssertProxyEgress proves a returned controller SOCKS5 URL routes a request
 // through the WireGuard peer. The target is an isolated HTTP server on the
 // peer itself, so CI never depends on a public API or provider account.
-func (i *Infra) AssertProxyEgress(ctx context.Context, proxyAddress string) error {
+func (i *Infra) AssertProxyEgress(ctx context.Context, proxyURL string) error {
 	if i.Consumer == nil {
 		return ctxerrors.New("SOCKS5 consumer is not running")
 	}
@@ -732,7 +776,7 @@ func (i *Infra) AssertProxyEgress(ctx context.Context, proxyAddress string) erro
 		"--output", "/dev/null",
 		"--silent",
 		"--show-error",
-		"--socks5-hostname", proxyAddress,
+		"--proxy", proxyURL,
 		"http://" + i.peerTarget + "/healthz",
 	}, tcexec.Multiplexed())
 	if err != nil {
@@ -764,6 +808,12 @@ func (i *Infra) AssertProxyEgress(ctx context.Context, proxyAddress string) erro
 func (i *Infra) Teardown(ctx context.Context) error {
 	var errs []error
 
+	if i.DirectConsumer != nil {
+		if err := i.DirectConsumer.Terminate(ctx); err != nil {
+			errs = append(errs, ctxerrors.Wrap(err, "terminate direct egress consumer"))
+		}
+	}
+
 	if i.Consumer != nil {
 		if err := i.Consumer.Terminate(ctx); err != nil {
 			errs = append(errs, ctxerrors.Wrap(err, "terminate SOCKS5 consumer"))
@@ -792,6 +842,15 @@ func (i *Infra) Teardown(ctx context.Context) error {
 
 		if err := i.Network.Remove(ctx); err != nil {
 			errs = append(errs, ctxerrors.Wrap(err, "remove integration network"))
+		}
+	}
+
+	if i.ControlNetwork != nil {
+		if err := i.ControlNetwork.Remove(ctx); err != nil {
+			errs = append(
+				errs,
+				ctxerrors.Wrap(err, "remove integration control network"),
+			)
 		}
 	}
 

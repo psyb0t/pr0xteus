@@ -33,9 +33,9 @@ request from growing into arbitrary Docker control.
 - Recently failed configuration names are skipped for the configured TTL.
 - A caller can exclude a returned SOCKS5 URL to avoid getting the same config
   back during replacement.
-- `Release` completes bookkeeping after a URL is returned. It does not track
-  a caller's downstream SOCKS5 session; idle time is a warm-cache policy, not
-  a connection lease.
+- `Release` completes allocation bookkeeping after a URL is returned. The
+  controller gateway separately keeps the exact cell in-flight until its
+  relayed SOCKS5 connection closes, so idle reap cannot cut an active stream.
 
 Pool configuration is immutable for one process lifetime. Edit local policy
 and rebuild/restart the Compose stack when changing it.

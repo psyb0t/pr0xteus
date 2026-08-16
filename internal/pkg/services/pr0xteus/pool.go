@@ -426,6 +426,38 @@ func (p *PoolState) release() {
 	p.tunnel.InFlight--
 }
 
+// acquireContainer reserves the exact hot cell recorded in a proxy lease. A
+// lease never silently switches to a newly spawned exit after its cell is gone.
+func (p *PoolState) acquireContainer(containerID string) (*Tunnel, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.tunnel == nil || p.tunnel.State != TunnelStateHot ||
+		p.tunnel.ContainerID != containerID {
+		return nil, ctxerrors.Wrapf(
+			ErrPoolUnavailable, "pool %q leased tunnel is unavailable", p.Spec.Name,
+		)
+	}
+
+	p.tunnel.InFlight++
+	p.tunnel.LastUsedAt = time.Now()
+	tunnel := *p.tunnel
+
+	return &tunnel, nil
+}
+
+func (p *PoolState) setLastURL(containerID, value string, expiresAt time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.tunnel == nil || p.tunnel.ContainerID != containerID {
+		return
+	}
+
+	p.tunnel.LastURL = value
+	p.tunnel.LastURLExpiresAt = expiresAt
+}
+
 // sameURL compares two *url.URL by scheme+host. Path is irrelevant
 // for proxy comparison.
 func sameURL(a, b *url.URL) bool {
@@ -446,6 +478,7 @@ type Manager struct {
 	// control scrapes each cell's cellproxy /status + /healthz when the API
 	// lists cells or a caller inspects one.
 	control cellControlClient
+	leases  *leaseRegistry
 
 	// spawnMu serializes per-pool spawn requests. Map of pool name
 	// → mutex so two countries pointing at the same pool don't
@@ -481,6 +514,7 @@ func NewManager(
 		control: cellControlClient{
 			http: &http.Client{Timeout: cellControlTimeout},
 		},
+		leases:  newLeaseRegistry(cfg.socksPublicAddr(), cfg.proxyLeaseTTL()),
 		spawnMu: make(map[string]*sync.Mutex),
 	}
 }
@@ -665,6 +699,9 @@ func (m *Manager) spawnFromState(
 
 	tunnel.Pool = state.Spec.Name
 	tunnel.State = TunnelStateHot
+	if tunnel.GatewayAddr == "" && tunnel.ProxyURL != nil {
+		tunnel.GatewayAddr = tunnel.ProxyURL.Host
+	}
 	tunnel.InFlight = 1
 	tunnel.LastUsedAt = time.Now()
 
@@ -709,6 +746,71 @@ func (m *Manager) Release(acq Acquisition) {
 	}
 
 	state.release()
+}
+
+// IssueLease turns an acquired cell into a short-lived controller-fronted
+// SOCKS5 URL and records it as the pool's latest allocation.
+func (m *Manager) IssueLease(acq Acquisition) (ProxyLease, error) {
+	lease, err := m.leases.Issue(acq)
+	if err != nil {
+		return ProxyLease{}, err
+	}
+
+	state, ok := m.pools[acq.Pool]
+	if !ok {
+		return ProxyLease{}, ctxerrors.Wrapf(ErrUnknownPool, "%q", acq.Pool)
+	}
+
+	state.setLastURL(acq.Tunnel.ContainerID, lease.URL, lease.ExpiresAt)
+
+	return lease, nil
+}
+
+// ResolveExcludedProxy maps a previously issued controller URL back to the
+// cell URL used by pool rotation. Legacy direct cell URLs remain accepted.
+func (m *Manager) ResolveExcludedProxy(raw string) (*url.URL, error) {
+	proxyURL, err := url.ParseRequestURI(raw)
+	if err != nil || proxyURL.Scheme != proxySchemeSOCKS5 || proxyURL.Host == "" || proxyURL.Port() == "" {
+		return nil, ctxerrors.Wrap(ErrInvalidCountry, "invalid excluded proxy URL")
+	}
+
+	if proxyURL.User == nil {
+		return proxyURL, nil
+	}
+
+	username := proxyURL.User.Username()
+	password, ok := proxyURL.User.Password()
+	if !ok {
+		return nil, ctxerrors.Wrap(ErrInvalidCountry, "excluded controller proxy lacks password")
+	}
+
+	lease, ok := m.leases.Lookup(username, password)
+	if !ok {
+		return nil, ctxerrors.Wrap(ErrInvalidCountry, "excluded controller proxy is expired or unknown")
+	}
+
+	return lease.InternalURL, nil
+}
+
+// AcquireForLease validates a SOCKS5 lease and reserves its exact live cell
+// until the returned acquisition is released when the proxied connection ends.
+func (m *Manager) AcquireForLease(username, password string) (Acquisition, error) {
+	lease, ok := m.leases.Lookup(username, password)
+	if !ok {
+		return Acquisition{}, ctxerrors.Wrap(ErrPoolUnavailable, "proxy lease expired or unknown")
+	}
+
+	state, ok := m.pools[lease.Pool]
+	if !ok {
+		return Acquisition{}, ctxerrors.Wrap(ErrPoolUnavailable, "proxy lease pool unavailable")
+	}
+
+	tunnel, err := state.acquireContainer(lease.ContainerID)
+	if err != nil {
+		return Acquisition{}, err
+	}
+
+	return Acquisition{Tunnel: tunnel, Pool: lease.Pool}, nil
 }
 
 // Close kills only the cells currently tracked by this manager. It is used on
@@ -784,6 +886,28 @@ func (m *Manager) Views() []PoolView {
 	return out
 }
 
+// ProxyViews returns one flattened entry per currently running tunnel. The
+// list is bounded by configured pools, so total is an in-memory exact count.
+func (m *Manager) ProxyViews() []ProxyView {
+	now := time.Now()
+	views := make([]ProxyView, 0, len(m.pools))
+
+	for poolName, state := range m.pools {
+		tunnel := state.Snapshot()
+		if tunnel == nil {
+			continue
+		}
+
+		views = append(views, proxyViewOf(poolName, tunnel, now))
+	}
+
+	sort.Slice(views, func(left, right int) bool {
+		return views[left].Pool < views[right].Pool
+	})
+
+	return views
+}
+
 // Pools returns the underlying state map so the reaper + health
 // monitor can iterate. Read-only contract.
 func (m *Manager) Pools() map[string]*PoolState { return m.pools }
@@ -850,6 +974,22 @@ func tunnelViewOf(t *Tunnel, now time.Time) *TunnelView {
 		HealthyAt:   t.HealthyAt,
 		LastUsedAt:  t.LastUsedAt,
 		IdleSeconds: now.Sub(t.LastUsedAt).Seconds(),
+	}
+}
+
+func proxyViewOf(poolName string, tunnel *Tunnel, now time.Time) ProxyView {
+	return ProxyView{
+		Pool:             poolName,
+		ConfName:         tunnel.ConfName,
+		State:            tunnel.State,
+		ExitCountry:      tunnel.ExitCountry,
+		ExitIP:           tunnel.ExitIP,
+		SpawnedAt:        tunnel.SpawnedAt,
+		HealthyAt:        tunnel.HealthyAt,
+		LastUsedAt:       tunnel.LastUsedAt,
+		LastURL:          tunnel.LastURL,
+		LastURLExpiresAt: tunnel.LastURLExpiresAt,
+		IdleSeconds:      now.Sub(tunnel.LastUsedAt).Seconds(),
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/psyb0t/aichteeteapee"
@@ -23,6 +24,8 @@ const (
 	bearerScheme      = "Bearer "
 	maxRequestBody    = 16 * 1024
 	countryCodeLength = 2
+	defaultProxyLimit = 100
+	maxProxyLimit     = 1000
 )
 
 // APIServer exposes the authenticated control plane. It keeps only the
@@ -46,6 +49,7 @@ func NewAPIServer(mgr *Manager, token []byte) *APIServer {
 // separate, unversioned listener.
 func (s *APIServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc(http.MethodPost+" "+pathV1Proxies, s.authenticate(s.handleProxy))
+	mux.HandleFunc(http.MethodGet+" "+pathV1Proxies, s.authenticate(s.handleProxies))
 	mux.HandleFunc(http.MethodGet+" "+pathV1Pools, s.authenticate(s.handlePools))
 	mux.HandleFunc(http.MethodGet+" "+pathV1Cells, s.authenticate(s.handleCells))
 	mux.HandleFunc(http.MethodGet+" "+pathV1CellByID, s.authenticate(s.handleCell))
@@ -85,7 +89,7 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	excludeProxy, ok := parseExcludedProxy(w, request.ExcludeProxy)
+	excludeProxy, ok := s.parseExcludedProxy(w, request.ExcludeProxy)
 	if !ok {
 		return
 	}
@@ -99,13 +103,21 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lease, err := s.mgr.IssueLease(acq)
+	if err != nil {
+		s.mgr.Release(acq)
+		ctxscope.GetLogger(r.Context()).Error("proxy lease issue failed", "err", err)
+		writeError(w, http.StatusInternalServerError, aichteeteapee.ErrorResponseInternalServerError)
+
+		return
+	}
+
 	response := ProxyResponse{
+		URL:         lease.URL,
 		Pool:        acq.Pool,
 		ExitCountry: acq.Tunnel.ExitCountry,
 		ExitIP:      acq.Tunnel.ExitIP,
-	}
-	if acq.Tunnel.ProxyURL != nil {
-		response.URL = acq.Tunnel.ProxyURL.String()
+		ExpiresAt:   lease.ExpiresAt,
 	}
 
 	ctxscope.GetLogger(r.Context()).Info(
@@ -193,14 +205,13 @@ func hasJSONContentType(r *http.Request) bool {
 	return err == nil && contentType == aichteeteapee.ContentTypeJSON
 }
 
-func parseExcludedProxy(w http.ResponseWriter, raw string) (*url.URL, bool) {
+func (s *APIServer) parseExcludedProxy(w http.ResponseWriter, raw string) (*url.URL, bool) {
 	if raw == "" {
 		return nil, true
 	}
 
-	proxyURL, err := url.ParseRequestURI(raw)
-	if err != nil || proxyURL.Scheme != proxySchemeSOCKS5 || proxyURL.Host == "" ||
-		proxyURL.User != nil || proxyURL.Port() == "" {
+	proxyURL, err := s.mgr.ResolveExcludedProxy(raw)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, aichteeteapee.ErrorResponseValidationFailed)
 
 		return nil, false
@@ -260,6 +271,63 @@ func (s *APIServer) handlePools(w http.ResponseWriter, _ *http.Request) {
 	aichteeteapee.WriteJSON(w, http.StatusOK, map[string]any{
 		"pools": s.mgr.Views(),
 	})
+}
+
+// handleProxies returns the flattened active-proxy inventory. It never creates
+// a tunnel or a new credential: POST remains the allocation action.
+func (s *APIServer) handleProxies(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := proxyListPage(w, r)
+	if !ok {
+		return
+	}
+
+	proxies := s.mgr.ProxyViews()
+	total := len(proxies)
+	if offset > total {
+		offset = total
+	}
+
+	end := min(offset+limit, total)
+
+	aichteeteapee.WriteJSON(w, http.StatusOK, ProxyListResponse{
+		Proxies: proxies[offset:end],
+		Limit:   limit,
+		Offset:  offset,
+		Total:   total,
+	})
+}
+
+func proxyListPage(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	limit, err := boundedQueryInt(r, "limit", defaultProxyLimit, maxProxyLimit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, aichteeteapee.ErrorResponseValidationFailed)
+
+		return 0, 0, false
+	}
+
+	offset, err := boundedQueryInt(r, "offset", 0, 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, aichteeteapee.ErrorResponseValidationFailed)
+
+		return 0, 0, false
+	}
+
+	return limit, offset, true
+}
+
+func boundedQueryInt(r *http.Request, name string, defaultValue, maximum int) (int, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return defaultValue, nil
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 || maximum > 0 && value > maximum ||
+		name == "limit" && value == 0 {
+		return 0, errors.New("invalid pagination value")
+	}
+
+	return value, nil
 }
 
 func writeError(

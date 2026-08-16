@@ -1,6 +1,6 @@
 ---
 name: pr0xteus
-description: Give a trusted self-hosted workload a configured WireGuard-backed SOCKS5 exit through pr0xteus's bearer-protected private HTTP API. Request an operator-approved ISO country or logical pool, inspect configured pools and hot-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and private egress-network hostnames. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
+description: Give a trusted self-hosted workload a configured WireGuard-backed SOCKS5 exit through pr0xteus's bearer-protected private HTTP API. Request an operator-approved ISO country or logical pool, inspect current leased-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and a controller-fronted SOCKS5 gateway. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
 homepage: https://github.com/psyb0t/pr0xteus
 user-invocable: true
 metadata:
@@ -23,8 +23,8 @@ can ask for an approved country or pool; they cannot smuggle Docker flags,
 host paths, images, or arbitrary provider configs into the daemon.
 
 For the actual setup — local config, a complete pool example, and proof that a
-private SOCKS5 cell works — read [references/setup.md](references/setup.md)
-before touching the stack.
+controller-fronted SOCKS5 exit works — read
+[references/setup.md](references/setup.md) before touching the stack.
 
 ## Security and safety
 
@@ -34,9 +34,10 @@ before touching the stack.
 - Allocating a proxy starts or reuses a configured WireGuard cell. It can spend
   provider capacity and sends later traffic through the operator's exit, so
   only request the country, pool, and task the user actually named.
-- A returned `socks5://` URL is private Docker-network plumbing. Do not expose
-  it or paste it into a random public service. Use it from the intended
-  workload joined to `pr0xteus-egress`.
+- A returned `socks5://` URL is a short-lived bearer capability for the
+  controller's SOCKS gateway. Keep it out of logs, issue trackers, and public
+  services. Trusted host and container clients can use it directly; only the
+  controller talks to the selected cell's private address.
 - pr0xteus has no MCP endpoint. This is a documentation skill, not a fake
   bridge plugin with invented tools.
 
@@ -56,8 +57,8 @@ before touching the stack.
 - A public or anonymous proxy service.
 - Provider-account provisioning, config scraping, or random WireGuard surgery
   outside the operator-owned pool policy.
-- A workload outside the private Docker network that cannot resolve the
-  returned cell hostname.
+- An untrusted caller, public proxy use case, or a destination the operator
+  has not approved.
 
 ## Talk to a running controller
 
@@ -86,9 +87,10 @@ curl --fail-with-body \
   "$PR0XTEUS_URL/v1/proxies"
 ```
 
-The response contains `url`, `pool`, and `exitCountry`. The `url` works only
-from the private egress network. The setup reference has a one-shot container
-that proves it actually uses SOCKS5.
+The response contains `url`, `pool`, `exitCountry`, and `expiresAt`. The URL
+works from the host or another reachable trusted client: it authenticates to
+the controller, which forwards to the chosen cell without resolving the
+destination itself. The setup reference shows a direct `curl --proxy` proof.
 
 Inspect the operator view:
 
@@ -107,7 +109,7 @@ the old URL:
 curl --fail-with-body \
   "${auth_header[@]}" \
   --header 'Content-Type: application/json' \
-  --data '{"country":"US","excludeProxy":"socks5://previous-private-cell:1080"}' \
+  --data '{"country":"US","excludeProxy":"socks5://previous-lease-id:previous-secret@127.0.0.1:1080"}' \
   "$PR0XTEUS_URL/v1/proxies"
 ```
 

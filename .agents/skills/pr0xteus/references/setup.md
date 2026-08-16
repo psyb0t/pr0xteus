@@ -1,6 +1,6 @@
 # pr0xteus setup
 
-Pr0xteus is private egress plumbing. A trusted container receives a SOCKS5 URL
+Pr0xteus is private egress plumbing. A trusted client receives a SOCKS5 URL
 only after the controller has started a WireGuard-backed cell and seen a
 handshake. It is not an internet-facing proxy. Keep the controller on loopback
 or an authenticated private network, and use WireGuard material you are
@@ -47,6 +47,7 @@ shown; a system-wide install uses `/etc/pr0xteus` instead of `~/.config/pr0xteus
 ~/.config/pr0xteus/secrets/pools.yaml            approved logical pools
 ~/.config/pr0xteus/config/egress-routing.yaml    country -> pool policy
 ~/.config/pr0xteus/.env                           bearer token, host path, image and ports
+~/.config/pr0xteus/.env.example                   refreshed reference; safe to inspect
 ```
 
 The bearer token is `PR0XTEUS_API_TOKEN` in owner-only `.env`, not a separate
@@ -87,9 +88,10 @@ needs an override; that override must contain an immutable digest.
 
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
 commands: `pr0xteus stop`, `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
-(re-pin to the newest release and drop the old image), and `pr0xteus uninstall`
-(prompts before deleting `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade`
-to use the moving `:latest` image for one run.
+(refreshes `.env.example`, re-pins to the newest release, and drops the old
+image), and `pr0xteus uninstall` (prompts before deleting
+`~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade` to use the moving
+`:latest` image for one run.
 
 To reach the controller from a tailnet instead of loopback-only, see the
 `PR0XTEUS_TAILSCALE_ENABLED` sidecar option in
@@ -108,7 +110,7 @@ image=psyb0t/pr0xteus:vX.Y.Z             # pin a released tag
 mkdir -p "$config_dir"
 docker pull "$image"
 
-# Scaffold compose + .env + config skeleton (preserves existing files).
+# Scaffold compose + .env + config skeleton and refresh .env.example (.env stays untouched).
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$config_dir:/config" \
   "$image" config init \
@@ -143,15 +145,13 @@ allocation="$(
 proxy_url="$(jq -er '.url' <<<"$allocation")"
 ```
 
-The returned URL is private Docker-network plumbing. Prove it from a
-short-lived container on `pr0xteus-egress`:
+The returned URL is a short-lived credential for the controller SOCKS gateway.
+Use it directly from the host; the controller forwards it to the selected cell
+over the internal network and the cell owns WireGuard egress:
 
 ```bash
-docker run --rm --network pr0xteus-egress \
-  curlimages/curl@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17 \
-  --fail --silent --show-error \
-  --proxy "$proxy_url" \
-  https://api.ipify.org
+curl --fail --silent --show-error \
+  --proxy "$proxy_url" https://api.ipify.org
 
 unset token proxy_url allocation
 unset -a auth_header

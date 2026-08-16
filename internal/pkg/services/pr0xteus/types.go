@@ -41,10 +41,14 @@ type Tunnel struct {
 	// + the recently-failed cache.
 	ConfName string
 
-	// ProxyURL is the operator-facing SOCKS5 address. It resolves over the
-	// private cell network in normal mode, or host loopback in smoke-test mode.
-	// Empty while spawning.
+	// ProxyURL is the cell's private SOCKS5 address. It is internal routing
+	// state, never the controller-fronted client URL. Empty while spawning.
 	ProxyURL *url.URL
+
+	// GatewayAddr is the controller-reachable cell SOCKS5 address. In the
+	// contained Compose topology it is the cell-control-network IP, never the
+	// caller-facing controller address.
+	GatewayAddr string
 
 	// State is the lifecycle phase, see TunnelState.
 	State TunnelState
@@ -73,6 +77,13 @@ type Tunnel struct {
 	// LastUsedAt is the most recent timestamp a proxy assignment
 	// returned this tunnel's URL. Drives idle-reap.
 	LastUsedAt time.Time
+
+	// LastURL is the most recently issued controller-fronted SOCKS5 URL. It
+	// contains a short-lived credential and stays in memory only.
+	LastURL string
+
+	// LastURLExpiresAt bounds reuse of LastURL.
+	LastURLExpiresAt time.Time
 
 	// InFlight is the count of proxy assignments that returned this
 	// tunnel and haven't yet completed their HTTP exchange. The
@@ -115,8 +126,9 @@ type TunnelView struct {
 	// ConfName is the bundled .conf basename used for the tunnel.
 	ConfName string `json:"confName"`
 
-	// ProxyURL is the SOCKS5 proxy URL, omitted when the
-	// tunnel is still spawning.
+	// ProxyURL is the internal cell SOCKS5 address, omitted when the tunnel is
+	// still spawning. Clients receive a short-lived controller URL from POST
+	// /v1/proxies instead.
 	ProxyURL string `json:"proxyUrl,omitempty"`
 
 	// State is the lifecycle phase.
@@ -145,8 +157,35 @@ type TunnelView struct {
 
 // ProxyResponse is the JSON returned by POST /v1/proxies.
 type ProxyResponse struct {
-	URL         string `json:"url"`
-	Pool        string `json:"pool"`
-	ExitCountry string `json:"exitCountry"`
-	ExitIP      string `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism
+	URL         string    `json:"url"`
+	Pool        string    `json:"pool"`
+	ExitCountry string    `json:"exitCountry"`
+	ExitIP      string    `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+// ProxyView is one current tunnel in the authenticated active-proxy inventory.
+// LastURL is the latest issued lease for that tunnel; it expires at
+// LastURLExpiresAt and is omitted until a caller first allocates the tunnel.
+type ProxyView struct {
+	Pool             string      `json:"pool"`
+	ConfName         string      `json:"confName"`
+	State            TunnelState `json:"state"`
+	ExitCountry      string      `json:"exitCountry"`
+	ExitIP           string      `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism
+	SpawnedAt        time.Time   `json:"spawnedAt"`
+	HealthyAt        time.Time   `json:"healthyAt,omitzero"`
+	LastUsedAt       time.Time   `json:"lastUsedAt,omitzero"`
+	LastURL          string      `json:"lastURL,omitempty"`
+	LastURLExpiresAt time.Time   `json:"lastURLExpiresAt,omitzero"`
+	IdleSeconds      float64     `json:"idleSeconds"`
+}
+
+// ProxyListResponse is the bounded active-proxy collection returned by
+// GET /v1/proxies.
+type ProxyListResponse struct {
+	Proxies []ProxyView `json:"proxies"`
+	Limit   int         `json:"limit"`
+	Offset  int         `json:"offset"`
+	Total   int         `json:"total"`
 }

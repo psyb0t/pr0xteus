@@ -81,10 +81,13 @@ services:
       PR0XTEUS_CELL_IMAGE: ${PR0XTEUS_CELL_IMAGE:-}
       PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE: ${PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE:-false}
       PR0XTEUS_CELL_NETWORK: pr0xteus-egress
+      PR0XTEUS_CELL_CONTROL_NETWORK: pr0xteus-cell-control
       PR0XTEUS_MANAGED_SCOPE: pr0xteus-compose
       PR0XTEUS_DOCKER_HOST: tcp://docker-socket-proxy:2375
       TUNNEL_POOL_LISTEN_ADDR: 0.0.0.0:8000
       TUNNEL_POOL_METRICS_ADDR: 0.0.0.0:9091
+      TUNNEL_POOL_SOCKS_ADDR: 0.0.0.0:1080
+      TUNNEL_POOL_SOCKS_PUBLIC_ADDR: 127.0.0.1:${PR0XTEUS_SOCKS_PORT:-1080}
       TUNNEL_POOL_BUNDLE_DIR: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/secrets/wireguard
       TUNNEL_POOL_POOLS_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/secrets/pools.yaml
       TUNNEL_POOL_ROUTING_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/config/egress-routing.yaml
@@ -94,6 +97,7 @@ services:
     ports:
       - "127.0.0.1:${PR0XTEUS_HTTP_PORT:-8000}:8000"
       - "127.0.0.1:${PR0XTEUS_METRICS_PORT:-9091}:9091"
+      - "127.0.0.1:${PR0XTEUS_SOCKS_PORT:-1080}:1080"
     volumes:
       - type: bind
         source: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}
@@ -101,7 +105,7 @@ services:
         read_only: true
     networks:
       - control
-      - egress
+      - cell-control
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/healthz | grep -qx 'ok'"]
       interval: 15s
@@ -176,6 +180,9 @@ networks:
   control:
     internal: true
     name: pr0xteus-control
+  cell-control:
+    internal: true
+    name: pr0xteus-cell-control
   egress:
     name: pr0xteus-egress
   tailnet:

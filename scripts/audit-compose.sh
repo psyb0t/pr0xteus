@@ -86,8 +86,13 @@ if ! awk '
 	exit 1
 fi
 
-if ! service_has_network pr0xteus egress; then
-	log ERROR "controller must join egress to probe private cell listeners"
+if service_has_network pr0xteus egress; then
+	log ERROR "controller must NOT join egress; it reaches cells over the internal cell-control network"
+	exit 1
+fi
+
+if ! service_has_network pr0xteus cell-control; then
+	log ERROR "controller must join cell-control to probe private cell listeners"
 	exit 1
 fi
 
@@ -124,7 +129,8 @@ require_pattern 'init:\s*true' 'every service needs init: true'
 require_pattern 'mem_limit:' 'every service needs a memory limit'
 require_pattern 'pids_limit:' 'every service needs a PID limit'
 require_pattern 'max-size:\s*"10m"' 'every service needs capped Docker JSON logs'
-require_pattern 'internal:\s*true' 'control network must remain internal'
+require_pattern 'internal:\s*true' 'control networks must remain internal'
+require_pattern 'name:\s*pr0xteus-cell-control' 'cell-control network must be declared'
 require_pattern 'PR0XTEUS_API_TOKEN:' 'controller token must come from ignored .env'
 require_pattern 'PR0XTEUS_CONFIG_DIR:' 'controller config root must be explicit'
 require_pattern 'profiles:\s*\["tailscale"\]' 'Tailscale must stay opt-in'

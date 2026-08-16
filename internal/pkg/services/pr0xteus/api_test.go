@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -172,11 +173,161 @@ func TestAPIServer_AssignsCountryAndPool(t *testing.T) {
 
 			var payload ProxyResponse
 			require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-			assert.Equal(t, "socks5://test-cell:1080", payload.URL)
+			assertProxyLeaseURL(t, payload.URL)
 			assert.Equal(t, "western", payload.Pool)
 			assert.Equal(t, "DE", payload.ExitCountry)
+			assert.WithinDuration(t, time.Now().Add(defaultProxyLeaseTTL), payload.ExpiresAt, time.Second)
 		})
 	}
+}
+
+func TestAPIServer_ListsActiveProxies(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestAPIServer(t)
+	allocated := httptest.NewRecorder()
+	server.ServeHTTP(
+		allocated,
+		newAuthenticatedRequest(t, http.MethodPost, pathV1Proxies, `{"country":"DE"}`),
+	)
+	require.Equal(t, http.StatusOK, allocated.Code)
+
+	var allocation ProxyResponse
+	require.NoError(t, json.NewDecoder(allocated.Body).Decode(&allocation))
+
+	response := httptest.NewRecorder()
+	server.ServeHTTP(
+		response,
+		newAuthenticatedRequest(t, http.MethodGet, pathV1Proxies+"?limit=1&offset=0", ""),
+	)
+	require.Equal(t, http.StatusOK, response.Code)
+
+	var payload ProxyListResponse
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Len(t, payload.Proxies, 1)
+	assert.Equal(t, 1, payload.Total)
+	assert.Equal(t, allocation.URL, payload.Proxies[0].LastURL)
+	assert.Equal(t, allocation.ExpiresAt, payload.Proxies[0].LastURLExpiresAt)
+	assert.Equal(t, "western", payload.Proxies[0].Pool)
+}
+
+func TestAPIServer_ProxyInventoryPaginates(t *testing.T) {
+	t.Parallel()
+
+	manager := proxyInventoryTestManager(t, 3)
+	server := NewAPIServer(manager, []byte(testAPIToken))
+
+	first := httptest.NewRecorder()
+	server.ServeHTTP(
+		first,
+		newAuthenticatedRequest(t, http.MethodGet, pathV1Proxies+"?limit=2", ""),
+	)
+	require.Equal(t, http.StatusOK, first.Code)
+	var firstPage ProxyListResponse
+	require.NoError(t, json.NewDecoder(first.Body).Decode(&firstPage))
+	assert.Len(t, firstPage.Proxies, 2)
+	assert.Equal(t, 3, firstPage.Total)
+	assert.Equal(t, 0, firstPage.Offset)
+
+	second := httptest.NewRecorder()
+	server.ServeHTTP(
+		second,
+		newAuthenticatedRequest(t, http.MethodGet, pathV1Proxies+"?limit=2&offset=2", ""),
+	)
+	require.Equal(t, http.StatusOK, second.Code)
+	var secondPage ProxyListResponse
+	require.NoError(t, json.NewDecoder(second.Body).Decode(&secondPage))
+	assert.Len(t, secondPage.Proxies, 1)
+	assert.Equal(t, 3, secondPage.Total)
+	assert.Equal(t, 2, secondPage.Offset)
+	assert.NotEqual(t, firstPage.Proxies[0].Pool, secondPage.Proxies[0].Pool)
+}
+
+func TestAPIServer_AcceptsIssuedURLForExcludeProxy(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestAPIServer(t)
+	allocated := httptest.NewRecorder()
+	server.ServeHTTP(
+		allocated,
+		newAuthenticatedRequest(t, http.MethodPost, pathV1Proxies, `{"country":"DE"}`),
+	)
+	require.Equal(t, http.StatusOK, allocated.Code)
+
+	var previous ProxyResponse
+	require.NoError(t, json.NewDecoder(allocated.Body).Decode(&previous))
+
+	replacement := httptest.NewRecorder()
+	server.ServeHTTP(
+		replacement,
+		newAuthenticatedRequest(
+			t,
+			http.MethodPost,
+			pathV1Proxies,
+			`{"country":"DE","excludeProxy":`+strconv.Quote(previous.URL)+`}`,
+		),
+	)
+	assert.Equal(t, http.StatusServiceUnavailable, replacement.Code)
+}
+
+func TestAPIServer_RejectsInvalidProxyInventoryPagination(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestAPIServer(t)
+	for _, query := range []string{"?limit=0", "?limit=1001", "?offset=-1", "?limit=nope"} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(
+			response,
+			newAuthenticatedRequest(t, http.MethodGet, pathV1Proxies+query, ""),
+		)
+		assertErrorResponse(
+			t,
+			response,
+			http.StatusBadRequest,
+			aichteeteapee.ErrorResponseValidationFailed,
+		)
+	}
+}
+
+func proxyInventoryTestManager(t *testing.T, count int) *Manager {
+	t.Helper()
+
+	specs := make(map[string]PoolSpec, count)
+	now := time.Now()
+	for index := range count {
+		name := "pool-" + strconv.Itoa(index)
+		confName := "conf-" + strconv.Itoa(index)
+		specs[name] = PoolSpec{
+			Name:          name,
+			Configs:       []string{confName},
+			ExitCountries: map[string]string{confName: "DE"},
+		}
+	}
+
+	manager := NewManager(
+		Config{FailureCacheTTL: time.Minute, SpawnTimeout: time.Second},
+		specs,
+		&Router{countryToPool: map[string]string{}},
+		&cellsTestSpawner{},
+	)
+	for name, state := range manager.Pools() {
+		proxyURL, err := url.Parse("socks5://" + name + ":1080")
+		require.NoError(t, err)
+		state.setTunnel(&Tunnel{
+			ContainerID: name,
+			ConfName:    state.Spec.Configs[0],
+			ProxyURL:    proxyURL,
+			GatewayAddr: proxyURL.Host,
+			State:       TunnelStateHot,
+			Pool:        name,
+			ExitCountry: "DE",
+			SpawnedAt:   now,
+			HealthyAt:   now,
+			LastUsedAt:  now,
+		})
+	}
+
+	return manager
 }
 
 // TestAPIServer_SuccessfulAcquireIncrementsAcquireMetric extends the
@@ -205,6 +356,21 @@ func TestAPIServer_ProtectsPoolStatus(t *testing.T) {
 	server, _ := newTestAPIServer(t)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, pathV1Pools, nil))
+
+	assertErrorResponse(
+		t,
+		response,
+		http.StatusUnauthorized,
+		aichteeteapee.ErrorResponseUnauthorized,
+	)
+}
+
+func TestAPIServer_ProtectsProxyInventory(t *testing.T) {
+	t.Parallel()
+
+	server, _ := newTestAPIServer(t)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, pathV1Proxies, nil))
 
 	assertErrorResponse(
 		t,

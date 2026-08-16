@@ -21,6 +21,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	require.NoError(t, err)
 	assert.Len(t, result.Created, 4)
 	assert.Empty(t, result.Preserved)
+	assert.Len(t, result.Refreshed, 1)
 
 	envPath := filepath.Join(configDir, dotEnvFileName)
 	env, err := os.ReadFile(envPath)
@@ -29,6 +30,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	assert.Contains(t, string(env), "PR0XTEUS_CONTROLLER_IMAGE="+defaultControllerImage)
 	assert.Contains(t, string(env), "PR0XTEUS_TAILSCALE_ENABLED=false")
 	assert.NotContains(t, string(env), "API_TOKEN_FILE")
+	assert.FileExists(t, filepath.Join(configDir, dotEnvExampleFileName))
 
 	info, err := os.Stat(envPath)
 	require.NoError(t, err)
@@ -56,10 +58,49 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	require.NoError(t, err)
 	assert.Empty(t, secondResult.Created)
 	assert.Len(t, secondResult.Preserved, 4)
+	assert.Len(t, secondResult.Refreshed, 1)
 	assert.Equal(t, poolBefore, readBootstrapFixture(t, poolPath))
 	assert.Equal(t, routingBefore, readBootstrapFixture(t, routingPath))
 	assert.Equal(t, composeBefore, readBootstrapFixture(t, composePath))
 	assert.Equal(t, env, readBootstrapFixture(t, envPath))
+}
+
+func TestBootstrapConfigRefreshesExampleWithoutReplacingDotEnv(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	_, err := BootstrapConfig(BootstrapOptions{
+		ConfigDir:       configDir,
+		HostConfigDir:   configDir,
+		ControllerImage: defaultControllerImage,
+	})
+	require.NoError(t, err)
+
+	envPath := filepath.Join(configDir, dotEnvFileName)
+	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
+	require.NoError(t, os.WriteFile(envPath, []byte("PR0XTEUS_API_TOKEN=keep-me\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(examplePath, []byte("stale\n"), bootstrapExampleMode))
+
+	result, err := BootstrapConfig(BootstrapOptions{
+		ConfigDir:       configDir,
+		HostConfigDir:   configDir,
+		ControllerImage: "psyb0t/pr0xteus:v9.9.9",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(configDir, dotEnvExampleFileName)}, result.Refreshed)
+	assert.Equal(t, "PR0XTEUS_API_TOKEN=keep-me\n", string(readBootstrapFixture(t, envPath)))
+	assert.Contains(t, string(readBootstrapFixture(t, examplePath)), "PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:v9.9.9")
+}
+
+func TestRootEnvExampleMatchesBootstrapTemplate(t *testing.T) {
+	t.Parallel()
+
+	rootExamplePath := filepath.Join("..", "..", "..", "..", ".env.example")
+	assert.Equal(
+		t,
+		renderEnvExample("/absolute/path/to/pr0xteus", "psyb0t/pr0xteus:vX.Y.Z", false),
+		string(readBootstrapFixture(t, rootExamplePath)),
+	)
 }
 
 func TestCheckConfigValidatesGeneratedTokenAndOperatorFiles(t *testing.T) {
@@ -240,6 +281,14 @@ func TestWriteFileIfAbsentRejectsIrregularTargets(t *testing.T) {
 		assert.False(t, again)
 		assert.Equal(t, "hello", string(readBootstrapFixture(t, path)))
 	})
+}
+
+func TestWriteExampleFileRejectsIrregularTargets(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), dotEnvExampleFileName)
+	require.NoError(t, os.Mkdir(path, bootstrapDirectoryMode))
+	require.ErrorIs(t, writeExampleFile(path, []byte("x")), ErrConfigInvalid)
 }
 
 func TestEnsurePrivateDirectoryRejectsNonDirectory(t *testing.T) {

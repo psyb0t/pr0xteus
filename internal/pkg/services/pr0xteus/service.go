@@ -32,6 +32,7 @@ type Service struct {
 	mgr      *Manager
 	spawner  Spawner
 	reaper   *Reaper
+	gateway  *ProxyGateway
 
 	apiSrv     *serbewr.Server
 	metricsSrv *http.Server
@@ -76,6 +77,7 @@ func New() (*Service, error) {
 		mgr:      mgr,
 		spawner:  spawner,
 		reaper:   NewReaper(cfg, mgr, spawner, nil),
+		gateway:  NewProxyGateway(mgr, cfg.socksListenAddr()),
 	}, nil
 }
 
@@ -92,6 +94,7 @@ func (s *Service) Run(ctx context.Context) error {
 		"service", ServiceName,
 		"http_addr", s.cfg.HTTPAddr,
 		"metrics_addr", s.cfg.MetricsAddr,
+		"socks_addr", s.cfg.socksListenAddr(),
 		"pools_file", s.cfg.PoolsFile,
 		"bundle_dir", s.cfg.BundleDir,
 		"default_pool", s.cfg.DefaultPool,
@@ -113,7 +116,11 @@ func (s *Service) Run(ctx context.Context) error {
 
 	s.reaper.Start(ctx)
 
-	s.httpErr = make(chan error, 2) //nolint:mnd // api + metrics
+	s.httpErr = make(chan error, 3) //nolint:mnd // api + metrics + SOCKS gateway
+
+	if err := s.startGateway(ctx); err != nil {
+		return ctxerrors.Wrap(err, "start SOCKS gateway")
+	}
 
 	if err := s.startAPI(ctx); err != nil {
 		return ctxerrors.Wrap(err, "start api")
@@ -163,6 +170,12 @@ func (s *Service) Stop(ctx context.Context) error {
 		cancel()
 	}
 
+	if s.gateway != nil {
+		if err := s.gateway.Close(); err != nil {
+			logger.Warn("SOCKS gateway shutdown incomplete", "err", err)
+		}
+	}
+
 	if s.reaper != nil {
 		s.reaper.Shutdown()
 	}
@@ -170,6 +183,16 @@ func (s *Service) Stop(ctx context.Context) error {
 	if s.mgr != nil {
 		s.mgr.Close(ctx)
 	}
+
+	return nil
+}
+
+func (s *Service) startGateway(ctx context.Context) error {
+	if err := s.gateway.Start(ctx, s.httpErr); err != nil {
+		return err
+	}
+
+	ctxscope.GetLogger(ctx).Info("pr0xteus SOCKS gateway listening", "addr", s.cfg.socksListenAddr())
 
 	return nil
 }
@@ -228,6 +251,11 @@ func buildAPIRouter(api *APIServer) *serbewr.Router {
 					Method:  http.MethodPost,
 					Path:    pathV1Proxies,
 					Handler: api.authenticate(api.handleProxy),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    pathV1Proxies,
+					Handler: api.authenticate(api.handleProxies),
 				},
 				{
 					Method:  http.MethodGet,

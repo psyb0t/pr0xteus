@@ -20,15 +20,17 @@ const (
 
 	bootstrapDirectoryMode = 0o700
 	bootstrapFileMode      = 0o600
+	bootstrapExampleMode   = 0o644
 	randomTokenBytes       = 32
 
-	dotEnvFileName      = ".env"
-	composeFileName     = "docker-compose.yml"
-	apiTokenEnvName     = "PR0XTEUS_API_TOKEN" //nolint:gosec // G101 flags the env var NAME, not a secret value
-	poolsRelativePath   = "secrets/pools.yaml"
-	bundleRelativePath  = "secrets/wireguard"
-	routingRelativePath = "config/egress-routing.yaml"
-	tailscaleStatePath  = "tailscale/state"
+	dotEnvFileName        = ".env"
+	dotEnvExampleFileName = ".env.example"
+	composeFileName       = "docker-compose.yml"
+	apiTokenEnvName       = "PR0XTEUS_API_TOKEN" //nolint:gosec // G101 flags the env var NAME, not a secret value
+	poolsRelativePath     = "secrets/pools.yaml"
+	bundleRelativePath    = "secrets/wireguard"
+	routingRelativePath   = "config/egress-routing.yaml"
+	tailscaleStatePath    = "tailscale/state"
 
 	configDirectoryLabel = "config directory"
 )
@@ -56,6 +58,7 @@ type BootstrapOptions struct {
 type BootstrapResult struct {
 	Created   []string
 	Preserved []string
+	Refreshed []string
 }
 
 // ConfigCheckOptions defines the local configuration directory to validate.
@@ -87,7 +90,7 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 	}
 
 	result := BootstrapResult{}
-	if err := writeBootstrapFiles(configDir, hostConfigDir, &result); err != nil {
+	if err := writeBootstrapFiles(configDir, hostConfigDir, controllerImage, options.Development, &result); err != nil {
 		return BootstrapResult{}, err
 	}
 
@@ -126,7 +129,13 @@ func createBootstrapDirectories(configDir string) error {
 	return nil
 }
 
-func writeBootstrapFiles(configDir, hostConfigDir string, result *BootstrapResult) error {
+func writeBootstrapFiles(
+	configDir string,
+	hostConfigDir string,
+	controllerImage string,
+	development bool,
+	result *BootstrapResult,
+) error {
 	type bootstrapFile struct {
 		path         string
 		operatorPath string
@@ -159,6 +168,16 @@ func writeBootstrapFiles(configDir, hostConfigDir string, result *BootstrapResul
 
 		result.add(file.operatorPath, created)
 	}
+
+	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
+	if err := writeExampleFile(
+		examplePath,
+		[]byte(renderEnvExample(hostConfigDir, controllerImage, development)),
+	); err != nil {
+		return err
+	}
+
+	result.Refreshed = append(result.Refreshed, filepath.Join(hostConfigDir, dotEnvExampleFileName))
 
 	return nil
 }
@@ -320,6 +339,49 @@ func writeFileIfAbsent(path string, contents []byte) (bool, error) {
 	return true, nil
 }
 
+func writeExampleFile(path string, contents []byte) error {
+	info, err := os.Lstat(path)
+	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
+		return ctxerrors.Wrapf(ErrConfigInvalid, "config path %q must be a regular file", path)
+	}
+
+	if err != nil && !os.IsNotExist(err) {
+		return ctxerrors.Wrap(err, "stat config example")
+	}
+
+	temporaryFile, err := os.CreateTemp(filepath.Dir(path), ".env.example-*")
+	if err != nil {
+		return ctxerrors.Wrap(err, "create config example")
+	}
+
+	temporaryPath := temporaryFile.Name()
+	defer func() {
+		_ = os.Remove(temporaryPath) // best-effort cleanup after a failed replacement.
+	}()
+
+	if err := temporaryFile.Chmod(bootstrapExampleMode); err != nil {
+		_ = temporaryFile.Close()
+
+		return ctxerrors.Wrap(err, "set config example permissions")
+	}
+
+	if _, err := temporaryFile.Write(contents); err != nil {
+		_ = temporaryFile.Close()
+
+		return ctxerrors.Wrap(err, "write config example")
+	}
+
+	if err := temporaryFile.Close(); err != nil {
+		return ctxerrors.Wrap(err, "close config example")
+	}
+
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return ctxerrors.Wrap(err, "replace config example")
+	}
+
+	return nil
+}
+
 func newAPIToken() (string, error) {
 	token := make([]byte, randomTokenBytes)
 	if _, err := io.ReadFull(rand.Reader, token); err != nil {
@@ -383,10 +445,64 @@ func renderEnvFile(
 		apiTokenEnvName + "=" + apiToken,
 		"PR0XTEUS_HTTP_PORT=8000",
 		"PR0XTEUS_METRICS_PORT=9091",
+		"PR0XTEUS_SOCKS_PORT=1080",
 		"PR0XTEUS_TAILSCALE_ENABLED=false",
 		"TS_AUTHKEY=",
 		"TS_HOSTNAME=pr0xteus",
 		"TS_EXTRA_ARGS=--accept-dns=false",
+		"LOG_LEVEL=info",
+		"LOG_FORMAT=json",
+		"LOG_ADD_SOURCE=true",
+	}
+
+	if cellImage != "" {
+		lines = append(lines,
+			"PR0XTEUS_CELL_IMAGE="+cellImage,
+			"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE="+allowUnpinnedCellImage,
+		)
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderEnvExample(hostConfigDir string, controllerImage string, development bool) string {
+	cellImage := ""
+	allowUnpinnedCellImage := "false"
+
+	if development {
+		controllerImage = developmentControllerImage
+		cellImage = developmentCellImage
+		allowUnpinnedCellImage = "true"
+	}
+
+	lines := []string{
+		"# This file is refreshed by pr0xteus setup and upgrade. Copy values into .env; .env is never overwritten.",
+		"# Never commit .env, WireGuard bundles, routing policy, or the API token.",
+		"",
+		"# Docker binds this absolute host directory into the controller at the same path.",
+		"PR0XTEUS_CONFIG_DIR=" + hostConfigDir,
+		"",
+		"# Required private controller bearer token. config init generates a random owner-only value in .env.",
+		apiTokenEnvName + "=REPLACE_ME",
+		"",
+		"# Published controller image. setup and upgrade pin this automatically to a release.",
+		"PR0XTEUS_CONTROLLER_IMAGE=" + controllerImage,
+		"",
+		"# Optional cell override. Leave it unset to use the matching cell baked into the controller image.",
+		"# PR0XTEUS_CELL_IMAGE=psyb0t/pr0xteus:cell-vX.Y.Z@sha256:REPLACE_WITH_PUBLISHED_DIGEST",
+		"# PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false",
+		"",
+		"# Ports stay loopback-only in docker-compose.yml.",
+		"PR0XTEUS_HTTP_PORT=8000",
+		"PR0XTEUS_METRICS_PORT=9091",
+		"PR0XTEUS_SOCKS_PORT=1080",
+		"",
+		"# Optional tailnet-only API. Set true and provide a key from your own tailnet.",
+		"PR0XTEUS_TAILSCALE_ENABLED=false",
+		"TS_AUTHKEY=your-tailscale-auth-key",
+		"TS_HOSTNAME=pr0xteus",
+		"TS_EXTRA_ARGS=--accept-dns=false",
+		"",
 		"LOG_LEVEL=info",
 		"LOG_FORMAT=json",
 		"LOG_ADD_SOURCE=true",

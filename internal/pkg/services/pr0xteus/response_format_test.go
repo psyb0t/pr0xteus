@@ -45,9 +45,24 @@ func TestAPIServer_ProxyResponseFormat(t *testing.T) {
 
 	var payload ProxyResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &payload))
-	assert.Equal(t, "socks5://test-cell:1080", payload.URL)
+	assertProxyLeaseURL(t, payload.URL)
 	assert.Equal(t, "western", payload.Pool)
 	assert.Equal(t, "DE", payload.ExitCountry)
+	assert.False(t, payload.ExpiresAt.IsZero())
+}
+
+func assertProxyLeaseURL(t *testing.T, raw string) {
+	t.Helper()
+
+	leaseURL, err := url.Parse(raw)
+	require.NoError(t, err)
+	assert.Equal(t, proxySchemeSOCKS5, leaseURL.Scheme)
+	assert.Equal(t, defaultSOCKSPublicAddr, leaseURL.Host)
+	require.NotNil(t, leaseURL.User)
+	assert.NotEmpty(t, leaseURL.User.Username())
+	password, ok := leaseURL.User.Password()
+	require.True(t, ok)
+	assert.NotEmpty(t, password)
 }
 
 func TestAPIServer_PoolsResponseFormat(t *testing.T) {
