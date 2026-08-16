@@ -136,7 +136,7 @@ token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(
-  curl --fail-with-body \
+  curl --fail-with-body --request POST \
     "${auth_header[@]}" \
     --header 'Content-Type: application/json' \
     --data '{"country":"US"}' \
@@ -147,7 +147,15 @@ proxy_url="$(jq -er '.url' <<<"$allocation")"
 
 The returned URL is a short-lived credential for the controller SOCKS gateway.
 Use it directly from the host; the controller forwards it to the selected cell
-over the internal network and the cell owns WireGuard egress:
+over the internal network and the cell owns WireGuard egress. To inspect active
+exits without making another allocation:
+
+```bash
+curl --fail-with-body "${auth_header[@]}" \
+  'http://127.0.0.1:8000/v1/proxies?limit=100' | jq .
+```
+
+Use the allocated URL for real traffic:
 
 ```bash
 curl --fail --silent --show-error \
@@ -200,7 +208,7 @@ export PR0XTEUS_API_TOKEN=read-it-from-your-secret-store
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$PR0XTEUS_API_TOKEN"))
 
 curl --fail-with-body "${auth_header[@]}" "$PR0XTEUS_URL/v1/pools" | jq .
-curl --fail-with-body "${auth_header[@]}" \
+curl --fail-with-body --request POST "${auth_header[@]}" \
   --header 'Content-Type: application/json' \
   --data '{"pool":"us"}' \
   "$PR0XTEUS_URL/v1/proxies"

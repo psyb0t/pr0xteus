@@ -120,7 +120,7 @@ token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
 allocation="$(
-  curl --fail-with-body \
+  curl --fail-with-body --request POST \
     "${auth_header[@]}" \
     --header 'Content-Type: application/json' \
     --data '{"country":"US"}' \

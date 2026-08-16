@@ -97,7 +97,7 @@ kernel-mode tunnel; no other Pr0xteus service receives those privileges.
 
 ```bash
 token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
-curl --fail-with-body \
+curl --fail-with-body --request POST \
   --header @<(printf 'Authorization: Bearer %s' "$token") \
   --header 'Content-Type: application/json' \
   --data '{"country":"US"}' \

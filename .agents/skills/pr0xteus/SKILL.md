@@ -80,7 +80,7 @@ curl --fail --silent http://127.0.0.1:9091/healthz
 Ask for the configured US route:
 
 ```bash
-curl --fail-with-body \
+curl --fail-with-body --request POST \
   "${auth_header[@]}" \
   --header 'Content-Type: application/json' \
   --data '{"country":"US"}' \
@@ -91,6 +91,16 @@ The response contains `url`, `pool`, `exitCountry`, and `expiresAt`. The URL
 works from the host or another reachable trusted client: it authenticates to
 the controller, which forwards to the chosen cell without resolving the
 destination itself. The setup reference shows a direct `curl --proxy` proof.
+
+Inspect active exits without creating another lease:
+
+```bash
+curl --fail-with-body "${auth_header[@]}" \
+  "$PR0XTEUS_URL/v1/proxies?limit=100" | jq .
+```
+
+Every collection route (`/v1/proxies`, `/v1/pools`, and `/v1/cells`) accepts
+`limit` and `offset` and returns its items plus `limit`, `offset`, and `total`.
 
 Inspect the operator view:
 
@@ -106,7 +116,7 @@ If the workload cannot use an allocated proxy, request another one and exclude
 the old URL:
 
 ```bash
-curl --fail-with-body \
+curl --fail-with-body --request POST \
   "${auth_header[@]}" \
   --header 'Content-Type: application/json' \
   --data '{"country":"US","excludeProxy":"socks5://previous-lease-id:previous-secret@127.0.0.1:1080"}' \

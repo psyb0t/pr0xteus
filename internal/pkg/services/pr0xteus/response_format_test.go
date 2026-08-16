@@ -115,11 +115,11 @@ func TestAPIServer_PoolsResponseFormat(t *testing.T) {
 		assert.Contains(t, body, key, "pools response must carry %s", key)
 	}
 
-	var payload struct {
-		Pools []PoolView `json:"pools"`
-	}
+	var payload PoolListResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &payload))
 	require.Len(t, payload.Pools, 1)
+	assert.Equal(t, 1, payload.Total)
+	assert.Equal(t, defaultProxyLimit, payload.Limit)
 
 	pool := payload.Pools[0]
 	assert.Equal(t, "western", pool.Name)
@@ -160,17 +160,17 @@ func TestAPIServer_CellsResponseFormat(t *testing.T) {
 	body := response.Body.String()
 	for _, key := range []string{
 		`"cells"`, `"containerId"`, `"pool"`, `"confName"`, `"state"`,
-		`"traffic"`, `"requests"`, `"bytesUp"`, `"bytesDown"`,
+		`"limit"`, `"offset"`, `"total"`, `"traffic"`, `"requests"`, `"bytesUp"`, `"bytesDown"`,
 		`"active"`, `"destinations"`, `"destination"`,
 	} {
 		assert.Contains(t, body, key, "cells response must carry %s", key)
 	}
 
-	var payload struct {
-		Cells []CellView `json:"cells"`
-	}
+	var payload CellListResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &payload))
 	require.Len(t, payload.Cells, 1)
+	assert.Equal(t, 1, payload.Total)
+	assert.Equal(t, defaultProxyLimit, payload.Limit)
 
 	cell := payload.Cells[0]
 	assert.Equal(t, testCellContainerID, cell.ContainerID)

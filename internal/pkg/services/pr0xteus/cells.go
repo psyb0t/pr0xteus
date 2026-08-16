@@ -39,15 +39,22 @@ type CellView struct {
 	StatusError   string           `json:"statusError,omitempty"`
 }
 
+// CellListResponse is the bounded live-cell collection returned by GET
+// /v1/cells.
+type CellListResponse struct {
+	Cells  []CellView `json:"cells"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+	Total  int        `json:"total"`
+}
+
 // Cells returns a view of every live cell, discovered from docker by the
 // parent-id label and each enriched with its cellproxy /status traffic snapshot.
 // Cells are sorted by container ID for stable output.
-func (m *Manager) Cells(ctx context.Context) []CellView {
+func (m *Manager) Cells(ctx context.Context) ([]CellView, error) {
 	handles, err := m.spawner.ListChildren(ctx)
 	if err != nil {
-		ctxscope.GetLogger(ctx).Warn("listing cells failed", "err", err)
-
-		return nil
+		return nil, ctxerrors.Wrap(err, "list cells")
 	}
 
 	views := make([]CellView, 0, len(handles))
@@ -59,27 +66,25 @@ func (m *Manager) Cells(ctx context.Context) []CellView {
 		return views[i].ContainerID < views[j].ContainerID
 	})
 
-	return views
+	return views, nil
 }
 
 // CellByID returns the view of a single live cell by its container ID.
 func (m *Manager) CellByID(
 	ctx context.Context, containerID string,
-) (CellView, bool) {
+) (CellView, bool, error) {
 	handles, err := m.spawner.ListChildren(ctx)
 	if err != nil {
-		ctxscope.GetLogger(ctx).Warn("listing cells failed", "err", err)
-
-		return CellView{}, false
+		return CellView{}, false, ctxerrors.Wrap(err, "list cells")
 	}
 
 	for _, handle := range handles {
 		if handle.ContainerID == containerID {
-			return m.cellView(ctx, handle), true
+			return m.cellView(ctx, handle), true, nil
 		}
 	}
 
-	return CellView{}, false
+	return CellView{}, false, nil
 }
 
 // DestroyCell kills the cell with the given container ID and clears any pool
@@ -181,10 +186,28 @@ func (m *Manager) exitCountryFor(pool, conf string) string {
 	return exitCountryFromConf(conf)
 }
 
-// handleCells lists every tracked cell with its live traffic snapshot.
+// handleCells lists a bounded page of tracked cells with their live traffic
+// snapshots.
 func (s *APIServer) handleCells(w http.ResponseWriter, r *http.Request) {
-	aichteeteapee.WriteJSON(w, http.StatusOK, map[string]any{
-		"cells": s.mgr.Cells(r.Context()),
+	limit, offset, ok := collectionPage(w, r)
+	if !ok {
+		return
+	}
+
+	cells, err := s.mgr.Cells(r.Context())
+	if err != nil {
+		ctxscope.GetLogger(r.Context()).Error("list cells failed", "err", err)
+		writeError(w, http.StatusInternalServerError, aichteeteapee.ErrorResponseInternalServerError)
+
+		return
+	}
+
+	cells, offset, total := pageItems(cells, limit, offset)
+	aichteeteapee.WriteJSON(w, http.StatusOK, CellListResponse{
+		Cells:  cells,
+		Limit:  limit,
+		Offset: offset,
+		Total:  total,
 	})
 }
 
@@ -197,8 +220,15 @@ func (s *APIServer) handleCell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view, ok := s.mgr.CellByID(r.Context(), containerID)
-	if !ok {
+	view, found, err := s.mgr.CellByID(r.Context(), containerID)
+	if err != nil {
+		ctxscope.GetLogger(r.Context()).Error("get cell failed", "err", err)
+		writeError(w, http.StatusInternalServerError, aichteeteapee.ErrorResponseInternalServerError)
+
+		return
+	}
+
+	if !found {
 		writeError(w, http.StatusNotFound, aichteeteapee.ErrorResponseNotFound)
 
 		return

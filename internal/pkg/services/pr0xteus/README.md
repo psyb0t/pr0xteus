@@ -16,13 +16,18 @@ spawner.go   constrained Docker cell lifecycle
 reaper.go    idle, unhealthy, and orphan cleanup
 service.go   HTTP listeners and lifecycle wiring
 metrics.go   bounded-label Prometheus collectors
-cells.go     /v1/cells list, fetch, and delete handlers
+cells.go     paginated /v1/cells list, fetch, and delete handlers
 cellstatus.go per-cell traffic and health snapshot projection
 ```
 
 `APIServer` owns HTTP shape. `Manager` owns pool choice and synchronization.
 `CellSpawner` owns Docker details. Keeping these boundaries separate prevents a
 request from growing into arbitrary Docker control.
+
+Every collection route (`/v1/proxies`, `/v1/pools`, and `/v1/cells`) uses the
+same bounded `limit`/`offset`/`total` envelope. Docker discovery failures are
+returned to the HTTP layer as `500`; they are never misrepresented as an empty
+collection or a missing cell.
 
 ## Acquisition invariants
 

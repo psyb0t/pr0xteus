@@ -266,38 +266,45 @@ func (s *APIServer) writeAcquireError(
 	}
 }
 
-// handlePools returns the authenticated operator view of current pool state.
-func (s *APIServer) handlePools(w http.ResponseWriter, _ *http.Request) {
-	aichteeteapee.WriteJSON(w, http.StatusOK, map[string]any{
-		"pools": s.mgr.Views(),
+// handlePools returns the bounded authenticated operator view of current pool
+// state. Pools are local configuration, so the total is an exact in-memory
+// count.
+func (s *APIServer) handlePools(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := collectionPage(w, r)
+	if !ok {
+		return
+	}
+
+	pools, offset, total := pageItems(s.mgr.Views(), limit, offset)
+	aichteeteapee.WriteJSON(w, http.StatusOK, PoolListResponse{
+		Pools:  pools,
+		Limit:  limit,
+		Offset: offset,
+		Total:  total,
 	})
 }
 
 // handleProxies returns the flattened active-proxy inventory. It never creates
 // a tunnel or a new credential: POST remains the allocation action.
 func (s *APIServer) handleProxies(w http.ResponseWriter, r *http.Request) {
-	limit, offset, ok := proxyListPage(w, r)
+	limit, offset, ok := collectionPage(w, r)
 	if !ok {
 		return
 	}
 
-	proxies := s.mgr.ProxyViews()
-	total := len(proxies)
-	if offset > total {
-		offset = total
-	}
-
-	end := min(offset+limit, total)
+	proxies, offset, total := pageItems(s.mgr.ProxyViews(), limit, offset)
 
 	aichteeteapee.WriteJSON(w, http.StatusOK, ProxyListResponse{
-		Proxies: proxies[offset:end],
+		Proxies: proxies,
 		Limit:   limit,
 		Offset:  offset,
 		Total:   total,
 	})
 }
 
-func proxyListPage(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+// collectionPage parses the shared offset pagination contract for every
+// control-plane collection.
+func collectionPage(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 	limit, err := boundedQueryInt(r, "limit", defaultProxyLimit, maxProxyLimit)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, aichteeteapee.ErrorResponseValidationFailed)
@@ -313,6 +320,18 @@ func proxyListPage(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 	}
 
 	return limit, offset, true
+}
+
+// pageItems returns a safe page and normalizes an offset beyond the end to the
+// empty terminal page. All control-plane collections are bounded snapshots, so
+// total is exact and cheap to compute.
+func pageItems[T any](items []T, limit, offset int) ([]T, int, int) {
+	total := len(items)
+	if offset > total {
+		offset = total
+	}
+
+	return items[offset:min(offset+limit, total)], offset, total
 }
 
 func boundedQueryInt(r *http.Request, name string, defaultValue, maximum int) (int, error) {

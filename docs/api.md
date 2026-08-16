@@ -2,7 +2,9 @@
 
 The control API is a small private HTTP API. It is versioned under `/v1`,
 requires `Authorization: Bearer <token>` on every route, and is loopback-bound
-by the supplied Compose stack.
+by the supplied Compose stack. `POST /v1/proxies` allocates one SOCKS5 lease;
+`GET /v1/proxies` lists active exits. The shared path is intentional: POST is
+the state-changing collection action and GET is the read-only collection view.
 
 For a safe manual request and a real SOCKS5 egress proof, follow
 [complete-example.md](complete-example.md). The handler and pool state behind
@@ -33,7 +35,7 @@ Requests must use `Content-Type: application/json`. Bodies are capped at 16 KiB,
 unknown fields are rejected, and a request with both—or neither—`country` and
 `pool` gets a validation error.
 
-Successful response:
+Successful response (`200 OK`):
 
 ```json
 {
@@ -85,8 +87,9 @@ credential, so this endpoint has the same bearer-token protection as allocation.
 ## `GET /v1/pools`
 
 Returns the authenticated operator view of configured pools and their current
-tunnel projections. Docker IDs and in-flight request bookkeeping deliberately
-do not cross this API boundary.
+tunnel projections. It is paginated with `limit` (default `100`, maximum
+`1000`) and `offset` (default `0`). Docker IDs and in-flight request
+bookkeeping deliberately do not cross this API boundary.
 
 Typical response:
 
@@ -105,7 +108,10 @@ Typical response:
         "exitCountry": "US"
       }
     }
-  ]
+  ],
+  "limit": 100,
+  "offset": 0,
+  "total": 1
 }
 ```
 
@@ -115,14 +121,15 @@ the cell's internal SOCKS endpoint; use `POST /v1/proxies` for a client URL and
 
 ## `GET /v1/cells`
 
-Lists every running cell with its live traffic snapshot. Cells are discovered
-straight from Docker — the controller queries for containers carrying its own
-`pr0xteus.parent.id` label, so the source of truth for which cells exist and
-where they are is Docker, not in-memory state. Each cell's traffic is then
+Lists a page of running cells with live traffic snapshots. It is paginated with
+`limit` (default `100`, maximum `1000`) and `offset` (default `0`). Cells are
+discovered straight from Docker — the controller queries for containers carrying
+its own `pr0xteus.parent.id` label, so the source of truth for which cells exist
+and where they are is Docker, not in-memory state. Each cell's traffic is then
 scraped on demand from its cellproxy `/status` control endpoint at the cell's
 current IP on the private cell network. The view is keyed by the cell's own
-Docker container ID so a specific cell can be inspected or destroyed. `state` is
-Docker's own container state (e.g. `running`).
+Docker container ID so a specific cell can be inspected or destroyed. `state`
+is Docker's own container state (e.g. `running`).
 
 ```json
 {
@@ -147,7 +154,10 @@ Docker's own container state (e.g. `running`).
         ]
       }
     }
-  ]
+  ],
+  "limit": 100,
+  "offset": 0,
+  "total": 1
 }
 ```
 
@@ -178,8 +188,9 @@ The service uses the project-standard JSON error envelope. Expect:
 - `404` — no cell matches the requested container ID on a `/v1/cells/{id}` route.
 - `415` — missing or non-JSON content type.
 - `503` — no usable tunnel could be selected or started.
-- `500` — unexpected server failure; inspect controller logs without printing
-  credentials or WireGuard configuration.
+- `500` — unexpected controller failure, including an unavailable Docker
+  discovery call; inspect controller logs without printing credentials or
+  WireGuard configuration.
 
 `GET /healthz` and `GET /metrics` live on the separate metrics listener
 (default `:9091`), not under `/v1`, and are intentionally not authenticated.

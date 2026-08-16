@@ -231,10 +231,10 @@ short-lived credential: keep it out of logs and do not share it.
 token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
-# Ask for a US exit. The URL comes back only after the cell finishes its
-# WireGuard handshake wait and the controller has issued a SOCKS5 lease.
+# POST allocates one US exit. The URL comes back only after the cell finishes
+# its WireGuard handshake wait and the controller has issued a SOCKS5 lease.
 proxy_url="$(
-  curl --fail-with-body "${auth[@]}" \
+  curl --fail-with-body --request POST "${auth[@]}" \
     --header 'Content-Type: application/json' \
     --data '{"country":"US"}' \
     http://127.0.0.1:8000/v1/proxies | jq -er '.url'
@@ -324,9 +324,9 @@ The API is versioned and JSON-only:
 
 ```text
 POST   /v1/proxies             # allocate exactly one configured country or pool
-GET    /v1/proxies             # active proxy inventory and latest issued leases
-GET    /v1/pools               # authenticated pool/tunnel operator view
-GET    /v1/cells               # live cells with per-cell traffic metrics
+GET    /v1/proxies             # paginated active-proxy inventory and latest leases
+GET    /v1/pools               # paginated authenticated pool/tunnel operator view
+GET    /v1/cells               # paginated live cells with traffic metrics
 GET    /v1/cells/{containerID} # one cell, including its traffic snapshot
 DELETE /v1/cells/{containerID} # destroy a cell on demand
 GET    /healthz                # separate metrics listener, keep it private
@@ -340,9 +340,10 @@ clients do not need Docker network membership. `GET /v1/proxies` lists live
 tunnels with `lastUsedAt`, their latest issued lease URL and expiry, and exit
 metadata; it does not create a cell or a new lease.
 
-`GET /v1/cells` is the observability view: cells are discovered straight from
-Docker (by a `pr0xteus.parent.id` label — no in-memory registry to drift), and
-each carries the live traffic snapshot scraped from its cellproxy control port:
+`GET /v1/cells` is the observability view. It uses `limit` and `offset` like
+the other collections, discovers cells straight from Docker (by a
+`pr0xteus.parent.id` label — no in-memory registry to drift), and carries each
+cell's live traffic snapshot from its cellproxy control port:
 
 ```console
 $ curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/v1/cells
@@ -357,7 +358,10 @@ $ curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/v1/cells
         ]
       }
     }
-  ]
+  ],
+  "limit": 100,
+  "offset": 0,
+  "total": 1
 }
 ```
 

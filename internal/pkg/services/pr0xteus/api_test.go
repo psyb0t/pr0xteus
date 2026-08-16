@@ -50,11 +50,17 @@ func TestAPIServer_RejectsUnauthenticatedRequests(t *testing.T) {
 
 	testCases := []struct {
 		name   string
+		method string
+		path   string
+		body   string
 		header string
 	}{
-		{name: "missing bearer"},
-		{name: "wrong scheme", header: "Basic wrong"},
-		{name: "wrong token", header: "Bearer wrong-token"},
+		{name: "allocate missing bearer", method: http.MethodPost, path: pathV1Proxies, body: `{"country":"DE"}`},
+		{name: "proxy inventory wrong scheme", method: http.MethodGet, path: pathV1Proxies, header: "Basic wrong"},
+		{name: "pool inventory wrong token", method: http.MethodGet, path: pathV1Pools, header: "Bearer wrong-token"},
+		{name: "cell inventory missing bearer", method: http.MethodGet, path: pathV1Cells},
+		{name: "cell lookup missing bearer", method: http.MethodGet, path: pathV1Cells + "/cell-1"},
+		{name: "cell delete missing bearer", method: http.MethodDelete, path: pathV1Cells + "/cell-1"},
 	}
 
 	for _, tc := range testCases {
@@ -63,11 +69,13 @@ func TestAPIServer_RejectsUnauthenticatedRequests(t *testing.T) {
 
 			server, spawner := newTestAPIServer(t)
 			request := httptest.NewRequest(
-				http.MethodPost,
-				pathV1Proxies,
-				bytes.NewBufferString(`{"country":"DE"}`),
+				tc.method,
+				tc.path,
+				bytes.NewBufferString(tc.body),
 			)
-			request.Header.Set("Content-Type", "application/json")
+			if tc.body != "" {
+				request.Header.Set("Content-Type", "application/json")
+			}
 			request.Header.Set(aichteeteapee.HeaderNameAuthorization, tc.header)
 			response := httptest.NewRecorder()
 
@@ -243,6 +251,24 @@ func TestAPIServer_ProxyInventoryPaginates(t *testing.T) {
 	assert.NotEqual(t, firstPage.Proxies[0].Pool, secondPage.Proxies[0].Pool)
 }
 
+func TestAPIServer_PoolInventoryPaginates(t *testing.T) {
+	t.Parallel()
+
+	server := NewAPIServer(proxyInventoryTestManager(t, 3), []byte(testAPIToken))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(
+		response,
+		newAuthenticatedRequest(t, http.MethodGet, pathV1Pools+"?limit=2&offset=2", ""),
+	)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	var payload PoolListResponse
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Len(t, payload.Pools, 1)
+	assert.Equal(t, 2, payload.Offset)
+	assert.Equal(t, 3, payload.Total)
+}
+
 func TestAPIServer_AcceptsIssuedURLForExcludeProxy(t *testing.T) {
 	t.Parallel()
 
@@ -270,22 +296,24 @@ func TestAPIServer_AcceptsIssuedURLForExcludeProxy(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, replacement.Code)
 }
 
-func TestAPIServer_RejectsInvalidProxyInventoryPagination(t *testing.T) {
+func TestAPIServer_RejectsInvalidCollectionPagination(t *testing.T) {
 	t.Parallel()
 
 	server, _ := newTestAPIServer(t)
-	for _, query := range []string{"?limit=0", "?limit=1001", "?offset=-1", "?limit=nope"} {
-		response := httptest.NewRecorder()
-		server.ServeHTTP(
-			response,
-			newAuthenticatedRequest(t, http.MethodGet, pathV1Proxies+query, ""),
-		)
-		assertErrorResponse(
-			t,
-			response,
-			http.StatusBadRequest,
-			aichteeteapee.ErrorResponseValidationFailed,
-		)
+	for _, path := range []string{pathV1Proxies, pathV1Pools, pathV1Cells} {
+		for _, query := range []string{"?limit=0", "?limit=1001", "?offset=-1", "?limit=nope"} {
+			response := httptest.NewRecorder()
+			server.ServeHTTP(
+				response,
+				newAuthenticatedRequest(t, http.MethodGet, path+query, ""),
+			)
+			assertErrorResponse(
+				t,
+				response,
+				http.StatusBadRequest,
+				aichteeteapee.ErrorResponseValidationFailed,
+			)
+		}
 	}
 }
 

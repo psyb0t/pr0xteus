@@ -189,3 +189,12 @@ type ProxyListResponse struct {
 	Offset  int         `json:"offset"`
 	Total   int         `json:"total"`
 }
+
+// PoolListResponse is the bounded operator pool collection returned by
+// GET /v1/pools.
+type PoolListResponse struct {
+	Pools  []PoolView `json:"pools"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+	Total  int        `json:"total"`
+}

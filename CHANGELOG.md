@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.0 — 2026-08-16
+
+- **Control API collections are now consistent.** `GET /v1/proxies`,
+  `GET /v1/pools`, and `GET /v1/cells` all accept `limit` and `offset` and
+  return their items with `limit`, `offset`, and exact `total` fields.
+- **Cell discovery errors now report correctly.** A Docker discovery failure
+  returns the normal `500` error envelope for both the cell collection and a
+  single-cell lookup; it no longer looks like an empty collection or a missing
+  cell.
+- Made every documented allocation call explicitly use `--request POST`, so it
+  is obvious that `POST /v1/proxies` creates one lease while `GET /v1/proxies`
+  lists active exits.
+
 ## v0.6.0 — 2026-08-16
 
 **Breaking before 1.0:** `POST /v1/proxies` no longer returns a cell hostname

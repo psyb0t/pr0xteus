@@ -97,7 +97,8 @@ func TestManager_CellsScrapesTraffic(t *testing.T) {
 	})
 	manager := newCellsTestManager(t, &cellsTestSpawner{}, mustParseURL(t, server.URL))
 
-	cells := manager.Cells(context.Background())
+	cells, err := manager.Cells(context.Background())
+	require.NoError(t, err)
 	require.Len(t, cells, 1)
 	assert.Equal(t, testCellContainerID, cells[0].ContainerID)
 	assert.Equal(t, "ctrl-1", cells[0].ParentID)
@@ -112,7 +113,8 @@ func TestManager_CellsWithoutControlURL(t *testing.T) {
 
 	manager := newCellsTestManager(t, &cellsTestSpawner{}, nil)
 
-	cells := manager.Cells(context.Background())
+	cells, err := manager.Cells(context.Background())
+	require.NoError(t, err)
 	require.Len(t, cells, 1)
 	assert.Nil(t, cells[0].Traffic)
 	assert.Empty(t, cells[0].StatusError)
@@ -125,7 +127,8 @@ func TestManager_CellsStatusUnreachable(t *testing.T) {
 		t, &cellsTestSpawner{}, mustParseURL(t, "http://127.0.0.1:1"),
 	)
 
-	cells := manager.Cells(context.Background())
+	cells, err := manager.Cells(context.Background())
+	require.NoError(t, err)
 	require.Len(t, cells, 1)
 	assert.Nil(t, cells[0].Traffic)
 	assert.NotEmpty(t, cells[0].StatusError)
@@ -145,9 +148,12 @@ func TestManager_CellsEmptyWhenDockerReportsNoChildren(t *testing.T) {
 		&cellsTestSpawner{},
 	)
 
-	assert.Empty(t, manager.Cells(context.Background()))
+	cells, err := manager.Cells(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, cells)
 
-	_, ok := manager.CellByID(context.Background(), "anything")
+	_, ok, err := manager.CellByID(context.Background(), "anything")
+	require.NoError(t, err)
 	assert.False(t, ok)
 }
 
@@ -162,10 +168,11 @@ func TestManager_CellsHandlesDockerListError(t *testing.T) {
 		spawner,
 	)
 
-	assert.Nil(t, manager.Cells(context.Background()))
+	_, err := manager.Cells(context.Background())
+	require.Error(t, err)
 
-	_, ok := manager.CellByID(context.Background(), "anything")
-	assert.False(t, ok)
+	_, _, err = manager.CellByID(context.Background(), "anything")
+	require.Error(t, err)
 
 	require.Error(t, manager.DestroyCell(context.Background(), "anything"))
 }
@@ -188,7 +195,8 @@ func TestManager_ExitCountryFallsBackToConfPrefix(t *testing.T) {
 		spawner,
 	)
 
-	cells := manager.Cells(context.Background())
+	cells, err := manager.Cells(context.Background())
+	require.NoError(t, err)
 	require.Len(t, cells, 1)
 	assert.Equal(t, "US", cells[0].ExitCountry)
 }
@@ -199,11 +207,13 @@ func TestManager_CellByID(t *testing.T) {
 	server := cellControlServer(t, cellproxy.Status{})
 	manager := newCellsTestManager(t, &cellsTestSpawner{}, mustParseURL(t, server.URL))
 
-	view, ok := manager.CellByID(context.Background(), testCellContainerID)
+	view, ok, err := manager.CellByID(context.Background(), testCellContainerID)
+	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, testCellContainerID, view.ContainerID)
 
-	_, ok = manager.CellByID(context.Background(), "nope")
+	_, ok, err = manager.CellByID(context.Background(), "nope")
+	require.NoError(t, err)
 	assert.False(t, ok)
 }
 
@@ -260,12 +270,56 @@ func TestAPIServer_ListCells(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, response.Code)
 
-	var body struct {
-		Cells []CellView `json:"cells"`
-	}
+	var body CellListResponse
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
 	require.Len(t, body.Cells, 1)
 	assert.Equal(t, testCellContainerID, body.Cells[0].ContainerID)
+	assert.Equal(t, 1, body.Total)
+	assert.Equal(t, defaultProxyLimit, body.Limit)
+}
+
+func TestAPIServer_CellInventoryPaginates(t *testing.T) {
+	t.Parallel()
+
+	spawner := &cellsTestSpawner{}
+	api := newCellsTestAPIServer(t, spawner, nil)
+	spawner.children = []CellHandle{
+		{ContainerID: "cell-1", Pool: "western", ConfName: "de-frankfurt", State: "running"},
+		{ContainerID: "cell-2", Pool: "western", ConfName: "de-frankfurt", State: "running"},
+		{ContainerID: "cell-3", Pool: "western", ConfName: "de-frankfurt", State: "running"},
+	}
+
+	response := httptest.NewRecorder()
+	api.ServeHTTP(
+		response,
+		newAuthenticatedRequest(t, http.MethodGet, pathV1Cells+"?limit=2&offset=2", ""),
+	)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	var body CellListResponse
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+	require.Len(t, body.Cells, 1)
+	assert.Equal(t, "cell-3", body.Cells[0].ContainerID)
+	assert.Equal(t, 2, body.Offset)
+	assert.Equal(t, 3, body.Total)
+}
+
+func TestAPIServer_CellDiscoveryFailureIsInternalError(t *testing.T) {
+	t.Parallel()
+
+	spawner := &cellsTestSpawner{listErr: ctxerrors.New("docker daemon down")}
+	api := newCellsTestAPIServer(t, spawner, nil)
+
+	for _, path := range []string{pathV1Cells, pathV1Cells + "/" + testCellContainerID} {
+		response := httptest.NewRecorder()
+		api.ServeHTTP(response, newAuthenticatedRequest(t, http.MethodGet, path, ""))
+		assertErrorResponse(
+			t,
+			response,
+			http.StatusInternalServerError,
+			aichteeteapee.ErrorResponseInternalServerError,
+		)
+	}
 }
 
 func TestAPIServer_GetCell(t *testing.T) {
