@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.3 — 2026-08-17
+
+- Made the Makefile development image fully vendored. It no longer makes an
+  unused network `go mod download` during CI image builds, so test execution
+  uses the repository's committed dependency tree.
+
 ## v0.8.2 — 2026-08-17
 
 - Fixed local development and real-infrastructure tests: the locally built
