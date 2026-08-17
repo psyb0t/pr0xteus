@@ -231,16 +231,15 @@ func TestCheckedImageReference(t *testing.T) {
 	}
 }
 
-func TestRenderEnvFileDevelopmentModeWritesLocalImages(t *testing.T) {
+func TestRenderEnvFileDevelopmentModeUsesLocalControllerImage(t *testing.T) {
 	t.Parallel()
 
 	env := renderEnvFile("/abs/config", "ignored/in/dev:mode", "dev-token", true)
 	assert.Contains(t, env, "PR0XTEUS_CONFIG_DIR=/abs/config")
 	assert.Contains(t, env, "PR0XTEUS_CONTROLLER_IMAGE="+developmentControllerImage)
-	assert.Contains(t, env, "PR0XTEUS_CELL_IMAGE="+developmentCellImage)
-	assert.Contains(t, env, "PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=true")
 	assert.Contains(t, env, apiTokenEnvName+"=dev-token")
 	assert.NotContains(t, env, "ignored/in/dev:mode")
+	assert.NotContains(t, env, "PR0XTEUS_CELL_IMAGE=")
 }
 
 func TestWriteFileIfAbsentRejectsIrregularTargets(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/psyb0t/ctxerrors"
@@ -14,6 +15,8 @@ import (
 
 const (
 	maxAPITokenBytes = 4096
+	cellImageRepo    = "psyb0t/pr0xteus"
+	defaultCellTag   = "dev"
 
 	defaultSOCKSListenAddr = ":1080"
 	defaultSOCKSPublicAddr = "127.0.0.1:1080"
@@ -23,6 +26,44 @@ const (
 	minPort = 1
 	maxPort = 65535
 )
+
+// configuredCellImage is set once by main before services initialize. The
+// controller and cell therefore always use matching published build versions.
+//
+//nolint:gochecknoglobals // process startup config, set before services.Init.
+var configuredCellImage = cellImageForVersion(defaultCellTag)
+
+// configuredCellImageMu protects startup configuration for tests that load
+// configuration concurrently. Production sets it once before services.Init.
+//
+//nolint:gochecknoglobals // process startup config, set before services.Init.
+var configuredCellImageMu sync.RWMutex
+
+// ConfigureCellImageVersion fixes the cell image to the version built into the
+// controller binary. It deliberately has no environment equivalent: a
+// controller release must never allocate a different cell release.
+func ConfigureCellImageVersion(version string) {
+	configuredCellImageMu.Lock()
+	defer configuredCellImageMu.Unlock()
+
+	configuredCellImage = cellImageForVersion(version)
+}
+
+func configuredCellImageValue() string {
+	configuredCellImageMu.RLock()
+	defer configuredCellImageMu.RUnlock()
+
+	return configuredCellImage
+}
+
+func cellImageForVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = defaultCellTag
+	}
+
+	return cellImageRepo + ":cell-" + version
+}
 
 // Config is the env-driven configuration for pr0xteus. Each field is parsed
 // once at boot; invalid configuration fails closed before Docker is touched.
@@ -74,12 +115,9 @@ type Config struct {
 	// FailureCacheTTL avoids repeatedly selecting a recently failed config.
 	FailureCacheTTL time.Duration `default:"5m" env:"TUNNEL_POOL_FAILURE_CACHE_TTL"`
 
-	// CellImage identifies the WireGuard/SOCKS5 worker image.
-	CellImage string `default:"" env:"PR0XTEUS_CELL_IMAGE"`
-
-	// BuiltCellImage is the release-paired cell image baked into a controller
-	// image. PR0XTEUS_CELL_IMAGE remains the operator override.
-	BuiltCellImage string `default:"" env:"PR0XTEUS_BUILT_CELL_IMAGE"`
+	// CellImage identifies the release-paired WireGuard/SOCKS5 worker image.
+	// LoadConfig assigns it from the controller binary's baked build version.
+	CellImage string
 
 	// CellSocksPort is the in-container SOCKS5 listener port.
 	CellSocksPort int `default:"1080" env:"PR0XTEUS_CELL_SOCKS_PORT"`
@@ -120,10 +158,6 @@ type Config struct {
 	// APIToken protects the private control API. The standard deployment keeps
 	// it in the ignored .env beside the Compose file.
 	APIToken string `env:"PR0XTEUS_API_TOKEN,required"`
-
-	// AllowUnpinnedCellImage is a local-development escape hatch. Production
-	// must use an immutable image digest.
-	AllowUnpinnedCellImage bool `default:"false" env:"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE"` //nolint:lll // struct tag can't wrap
 }
 
 // LoadConfig parses and validates the environment.
@@ -134,17 +168,9 @@ func LoadConfig() (Config, error) {
 		return Config{}, ctxerrors.Wrap(err, "parse pr0xteus env")
 	}
 
-	cellImageOverridden, err := cfg.resolveCellImage()
-	if err != nil {
-		return Config{}, err
-	}
-
-	if cellImageOverridden && !cfg.AllowUnpinnedCellImage && !hasImageDigest(cfg.CellImage) {
-		return Config{}, ctxerrors.Wrap(
-			ErrConfigInvalid,
-			"PR0XTEUS_CELL_IMAGE override must be pinned by @sha256:<digest>",
-		)
-	}
+	// The controller owns this pairing; an environment setting must not be able
+	// to make a released controller run a mismatched cell.
+	cfg.CellImage = configuredCellImageValue()
 
 	if err := cfg.validatePorts(); err != nil {
 		return Config{}, err
@@ -262,23 +288,6 @@ func (cfg *Config) resolveParentID() {
 	cfg.ParentID = strings.TrimSpace(hostname)
 }
 
-func (cfg *Config) resolveCellImage() (bool, error) {
-	cellImageOverridden := strings.TrimSpace(cfg.CellImage) != ""
-	if cellImageOverridden {
-		return true, nil
-	}
-
-	cfg.CellImage = strings.TrimSpace(cfg.BuiltCellImage)
-	if cfg.CellImage != "" {
-		return false, nil
-	}
-
-	return false, ctxerrors.Wrap(
-		ErrConfigInvalid,
-		"PR0XTEUS_CELL_IMAGE or PR0XTEUS_BUILT_CELL_IMAGE required",
-	)
-}
-
 // ValidateAPIToken validates the private bearer token without logging it.
 func ValidateAPIToken(raw string) ([]byte, error) {
 	token := bytes.Clone(bytes.TrimSpace([]byte(raw)))
@@ -293,9 +302,4 @@ func ValidateAPIToken(raw string) ([]byte, error) {
 	}
 
 	return token, nil
-}
-
-// hasImageDigest reports whether image includes an immutable SHA-256 digest.
-func hasImageDigest(image string) bool {
-	return strings.Contains(image, "@sha256:")
 }

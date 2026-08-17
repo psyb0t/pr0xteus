@@ -37,8 +37,8 @@ is no separate Compose `secrets/` token file.
 The controller carries its matching cell reference: `latest` carries
 `cell-latest`; `vX.Y.Z` carries `cell-vX.Y.Z`. To pin a release, set
 `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.config/pr0xteus/.env`, then
-run `pr0xteus setup`. Do not set a cell override unless you need one; if you
-do, it must include an immutable digest.
+run `pr0xteus setup`. The controller pulls the matching cell on demand; there
+is no cell-image override.
 
 ## 2. Add a real WireGuard file and policy
 

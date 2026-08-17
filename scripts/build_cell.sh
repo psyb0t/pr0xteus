@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the pr0xteus cell image (ephemeral SOCKS5 + WireGuard worker).
-# Tagged psyb0t/pr0xteus:cell-dev for local development. The orchestrator
-# references this tag through PR0XTEUS_CELL_IMAGE in ignored local .env.
+# Tagged psyb0t/pr0xteus:cell-dev for local development. A controller built
+# with BUILD_VERSION=dev selects this matching tag without an env override.
 #
 # Run from anywhere — resolves the cell/ Dockerfile relative to this
 # script's location.

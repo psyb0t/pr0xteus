@@ -68,7 +68,7 @@ test-coverage: dev-image build-cell ## Require 90% coverage across all pr0xteus 
 	@MIN_TEST_COVERAGE=$(MIN_TEST_COVERAGE) $(DEV_RUN_DIND_INTEGRATION) bash scripts/make/servicepack/test_coverage.sh
 
 docker-build: ## Build the hardened production image with build identity
-	@build_commit="$$(git rev-parse --verify HEAD 2>/dev/null || true)"; docker build --pull --build-arg "APP_NAME=pr0xteus" --build-arg "BUILD_COMMIT=$$build_commit" --build-arg "PR0XTEUS_BUILT_CELL_IMAGE=$(CELL_IMAGE_NAME):$(CELL_TAG_PREFIX)$(TAG)" -t $(IMAGE_NAME):$(TAG) .
+	@build_commit="$$(git rev-parse --verify HEAD 2>/dev/null || true)"; docker build --pull --build-arg "APP_NAME=pr0xteus" --build-arg "BUILD_COMMIT=$$build_commit" --build-arg "BUILD_VERSION=$(TAG)" -t $(IMAGE_NAME):$(TAG) .
 
 build-cell: dev-image ## Build the WireGuard plus SOCKS5 cell image through the development container
 	@PR0XTEUS_CELL_TAG=$(CELL_IMAGE_NAME):$(CELL_TAG_PREFIX)$(TAG) $(DEV_RUN_DIND) bash scripts/build_cell.sh

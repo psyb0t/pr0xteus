@@ -9,6 +9,7 @@ import (
 	"github.com/psyb0t/pr0xteus/internal/app"
 	servicemanager "github.com/psyb0t/pr0xteus/internal/pkg/service-manager"
 	"github.com/psyb0t/pr0xteus/internal/pkg/services"
+	pr0xteusservice "github.com/psyb0t/pr0xteus/internal/pkg/services/pr0xteus"
 	"github.com/psyb0t/pr0xteus/pkg/runner"
 	_ "github.com/psyb0t/slogging/slogconf"
 	"github.com/spf13/cobra"
@@ -31,6 +32,7 @@ const (
 
 func main() {
 	setProcessScope(appName, buildCommit, buildVersion)
+	pr0xteusservice.ConfigureCellImageVersion(buildVersion)
 	services.Init()
 
 	rootCmd := buildRootCommand()

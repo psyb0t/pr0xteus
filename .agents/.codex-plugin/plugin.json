@@ -1,6 +1,6 @@
 {
   "name": "pr0xteus",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "WireGuard-backed SOCKS5 tunnel pools for trusted services that need a configured country exit without exposing an open proxy.",
   "author": {
     "name": "psyb0t",

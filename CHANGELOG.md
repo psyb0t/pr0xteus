@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.8.0 — 2026-08-17
+
+**Breaking before 1.0:** cells are now release-paired to their controller.
+`PR0XTEUS_CELL_IMAGE`, `PR0XTEUS_BUILT_CELL_IMAGE`, and the unpinned-cell
+development escape hatch are gone. Set `PR0XTEUS_CONTROLLER_IMAGE` to choose a
+release; its controller selects and pulls exactly its matching cell image.
+
+- Controller images now carry their own build version. `:latest` starts
+  `:cell-latest`; `:vX.Y.Z` starts `:cell-vX.Y.Z`; local builds consistently
+  use `:cell-dev`. The controller pulls the exact cell image before creating a
+  tunnel, so a missing worker image produces a clear allocation failure instead
+  of a later opaque Docker create error.
+- Image publication builds the cell first, then the matching controller. The
+  controller build receives its published tag as a build argument rather than
+  relying on a runtime environment setting.
+- Updated to Servicepack v1.6.0, which includes the application name, commit,
+  and build version in the process scope used by structured logs.
+
 ## v0.7.1 — 2026-08-16
 
 - Added `pr0xteus restart` to the installed command. It stops the stack and

@@ -35,7 +35,7 @@ jobs:
       repository_name: psyb0t/pr0xteus
       target_platforms: "linux/amd64,linux/arm64"
       build_targets: >-
-        [{"file":"cell/Dockerfile","tag_prefix":"cell-","stage":0},{"file":"Dockerfile","tag_suffix":"","stage":1,"build_args":"PR0XTEUS_BUILT_CELL_IMAGE=psyb0t/pr0xteus:cell-${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}"}]
+        [{"file":"cell/Dockerfile","tag_prefix":"cell-","stage":0},{"file":"Dockerfile","tag_suffix":"","stage":1,"build_args":"APP_NAME=pr0xteus\nBUILD_COMMIT=${{ github.sha }}\nBUILD_VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}"}]
       scan_severity: "high"
       scan_fail_build: false
       dockerhub_private: false

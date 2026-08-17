@@ -24,7 +24,7 @@ services:
     environment:
       CONTAINERS: 1
       POST: 1
-      IMAGES: 0
+      IMAGES: 1
       NETWORKS: 0
       SERVICES: 0
       TASKS: 0
@@ -78,8 +78,6 @@ services:
         condition: service_healthy
     environment:
       PR0XTEUS_API_TOKEN: ${PR0XTEUS_API_TOKEN:?run pr0xteus setup first}
-      PR0XTEUS_CELL_IMAGE: ${PR0XTEUS_CELL_IMAGE:-}
-      PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE: ${PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE:-false}
       PR0XTEUS_CELL_NETWORK: pr0xteus-egress
       PR0XTEUS_CELL_CONTROL_NETWORK: pr0xteus-cell-control
       PR0XTEUS_MANAGED_SCOPE: pr0xteus-compose

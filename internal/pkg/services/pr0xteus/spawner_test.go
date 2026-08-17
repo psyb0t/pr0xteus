@@ -299,6 +299,51 @@ func TestCellSpawner_MapsCreateAndStartFailures(t *testing.T) {
 	}
 }
 
+func TestCellSpawner_PullsCellImageBeforeCreatingContainer(t *testing.T) {
+	t.Parallel()
+
+	docker := &spawnerTestDockerClient{
+		createResult: mobyclient.ContainerCreateResult{ID: "created-cell"},
+	}
+	spawner := newSpawnerTestSubject(docker)
+	var pulledImage string
+	spawner.pullImage = func(_ context.Context, image string) error {
+		assert.Empty(t, docker.createOptions)
+		pulledImage = image
+
+		return nil
+	}
+
+	_, _, err := spawner.createAndStart(context.Background(), SpawnRequest{
+		Pool:      "western",
+		ConfName:  "de-berlin",
+		BundleDir: "/bundle",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, spawner.cfg.CellImage, pulledImage)
+	require.Len(t, docker.createOptions, 1)
+	assert.Equal(t, []string{"created-cell"}, docker.started)
+}
+
+func TestCellSpawner_RejectsAllocationWhenCellImagePullFails(t *testing.T) {
+	t.Parallel()
+
+	docker := &spawnerTestDockerClient{}
+	spawner := newSpawnerTestSubject(docker)
+	spawner.pullImage = func(context.Context, string) error {
+		return ctxerrors.New("registry unavailable")
+	}
+
+	_, _, err := spawner.createAndStart(context.Background(), SpawnRequest{
+		Pool:      "western",
+		ConfName:  "de-berlin",
+		BundleDir: "/bundle",
+	})
+	require.ErrorIs(t, err, ErrSpawnFailed)
+	assert.Empty(t, docker.createOptions)
+	assert.Empty(t, docker.started)
+}
+
 func TestCellSpawner_KillTreatsMissingContainerAsSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -487,6 +532,9 @@ func newSpawnerTestSubject(docker DockerClient) *CellSpawner {
 			ManagedScope:  "test-scope",
 		},
 		docker: docker,
-		nowFn:  time.Now,
+		pullImage: func(context.Context, string) error {
+			return nil
+		},
+		nowFn: time.Now,
 	}
 }

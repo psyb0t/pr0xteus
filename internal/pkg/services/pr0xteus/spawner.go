@@ -118,8 +118,9 @@ type HTTPDoer interface {
 // One per service; safe for concurrent use because every method
 // dials the docker daemon directly.
 type CellSpawner struct {
-	cfg    Config
-	docker DockerClient
+	cfg       Config
+	docker    DockerClient
+	pullImage func(context.Context, string) error
 
 	// http is used to probe the cell's SOCKS5 port (default :8000)
 	// for handshake status.
@@ -154,11 +155,27 @@ func NewCellSpawner(cfg Config) (*CellSpawner, error) {
 	}
 
 	return &CellSpawner{
-		cfg:    cfg,
-		docker: cli,
-		http:   &http.Client{},
-		nowFn:  time.Now,
+		cfg:       cfg,
+		docker:    cli,
+		pullImage: pullCellImage(cli),
+		http:      &http.Client{},
+		nowFn:     time.Now,
 	}, nil
+}
+
+func pullCellImage(cli *client.Client) func(context.Context, string) error {
+	return func(ctx context.Context, image string) error {
+		response, err := cli.ImagePull(ctx, image, client.ImagePullOptions{})
+		if err != nil {
+			return ctxerrors.Wrap(err, "start cell image pull")
+		}
+
+		if err := response.Wait(ctx); err != nil {
+			return ctxerrors.Wrap(err, "wait for cell image pull")
+		}
+
+		return nil
+	}
 }
 
 // Spawn runs the docker create + start + readiness-probe cycle.
@@ -212,6 +229,13 @@ func (s *CellSpawner) createAndStart(
 ) (string, string, error) {
 	containerName := buildContainerName(req.Pool, req.ConfName, s.nowFn())
 	confPath := filepath.Join(req.BundleDir, req.ConfName+".conf")
+	ctxscope.GetLogger(ctx).Info("pulling cell image", "image", s.cfg.CellImage)
+
+	if err := s.pullImage(ctx, s.cfg.CellImage); err != nil {
+		return "", "", ctxerrors.Wrapf(
+			ErrSpawnFailed, "pull cell image %s: %s", s.cfg.CellImage, err.Error(),
+		)
+	}
 
 	createResp, err := s.docker.ContainerCreate(
 		ctx, client.ContainerCreateOptions{

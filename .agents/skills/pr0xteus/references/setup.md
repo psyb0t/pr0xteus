@@ -83,8 +83,8 @@ curl --fail --silent http://127.0.0.1:9091/healthz
 
 `pr0xteus start` checks the local token, WireGuard bundle, pools, and routing
 before it starts containers. `latest` carries `cell-latest`; a versioned controller carries its matching
-versioned cell. Do not set `PR0XTEUS_CELL_IMAGE` unless an operator explicitly
-needs an override; that override must contain an immutable digest.
+versioned cell. The controller pulls that cell on demand; its image is not an
+operator setting.
 
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
 commands: `pr0xteus stop`, `pr0xteus restart`,

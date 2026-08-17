@@ -16,7 +16,6 @@ import (
 const (
 	defaultControllerImage     = "psyb0t/pr0xteus:latest"
 	developmentControllerImage = "psyb0t/pr0xteus:dev"
-	developmentCellImage       = "psyb0t/pr0xteus:cell-dev"
 
 	bootstrapDirectoryMode = 0o700
 	bootstrapFileMode      = 0o600
@@ -429,13 +428,8 @@ func renderEnvFile(
 	apiToken string,
 	development bool,
 ) string {
-	cellImage := ""
-	allowUnpinnedCellImage := "false"
-
 	if development {
 		controllerImage = developmentControllerImage
-		cellImage = developmentCellImage
-		allowUnpinnedCellImage = "true"
 	}
 
 	lines := []string{
@@ -455,24 +449,12 @@ func renderEnvFile(
 		"LOG_ADD_SOURCE=true",
 	}
 
-	if cellImage != "" {
-		lines = append(lines,
-			"PR0XTEUS_CELL_IMAGE="+cellImage,
-			"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE="+allowUnpinnedCellImage,
-		)
-	}
-
 	return strings.Join(lines, "\n") + "\n"
 }
 
 func renderEnvExample(hostConfigDir string, controllerImage string, development bool) string {
-	cellImage := ""
-	allowUnpinnedCellImage := "false"
-
 	if development {
 		controllerImage = developmentControllerImage
-		cellImage = developmentCellImage
-		allowUnpinnedCellImage = "true"
 	}
 
 	lines := []string{
@@ -488,10 +470,6 @@ func renderEnvExample(hostConfigDir string, controllerImage string, development 
 		"# Published controller image. setup and upgrade pin this automatically to a release.",
 		"PR0XTEUS_CONTROLLER_IMAGE=" + controllerImage,
 		"",
-		"# Optional cell override. Leave it unset to use the matching cell baked into the controller image.",
-		"# PR0XTEUS_CELL_IMAGE=psyb0t/pr0xteus:cell-vX.Y.Z@sha256:REPLACE_WITH_PUBLISHED_DIGEST",
-		"# PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false",
-		"",
 		"# Ports stay loopback-only in docker-compose.yml.",
 		"PR0XTEUS_HTTP_PORT=8000",
 		"PR0XTEUS_METRICS_PORT=9091",
@@ -506,13 +484,6 @@ func renderEnvExample(hostConfigDir string, controllerImage string, development 
 		"LOG_LEVEL=info",
 		"LOG_FORMAT=json",
 		"LOG_ADD_SOURCE=true",
-	}
-
-	if cellImage != "" {
-		lines = append(lines,
-			"PR0XTEUS_CELL_IMAGE="+cellImage,
-			"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE="+allowUnpinnedCellImage,
-		)
 	}
 
 	return strings.Join(lines, "\n") + "\n"

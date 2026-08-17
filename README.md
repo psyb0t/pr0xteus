@@ -295,14 +295,14 @@ Git, and stays out of Docker build contexts:
 - `secrets/wireguard/*.conf` — real WireGuard files.
 - `secrets/pools.yaml` — named pools and their approved config basenames.
 - `config/egress-routing.yaml` — country-to-pool policy.
-- `.env` — the private bearer token, absolute host configuration path, and image selection.
+- `.env` — the private bearer token, absolute host configuration path, and controller image selection.
 
 The installer writes `.env`; it is not something you need to create by hand.
-A published controller already names its matching cell: `latest` uses
-`cell-latest`, while `vX.Y.Z` uses `cell-vX.Y.Z`. An operator can override
-`PR0XTEUS_CELL_IMAGE`, but that override must be pinned by digest. Local
-development uses the locally built `psyb0t/pr0xteus:cell-dev` with the explicit
-unpinned escape hatch in the generated `.env`.
+The controller chooses its cell itself: `latest` pulls `cell-latest`, and
+`vX.Y.Z` pulls `cell-vX.Y.Z` before allocating a tunnel. That pairing is baked
+into the controller binary and cannot be changed through environment settings.
+Local development builds both images with the `dev` version, so it uses
+`psyb0t/pr0xteus:cell-dev` automatically.
 
 To stay on a particular release, change
 `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in

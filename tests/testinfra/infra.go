@@ -308,12 +308,12 @@ func (i *Infra) setupController(ctx context.Context) error {
 	bundleDir, poolsFile, routingFile := i.controllerConfigPaths()
 
 	dockerfile := controllerDockerfile
+	appName := "pr0xteus"
+	buildVersion := "dev"
 	env := map[string]string{
-		"PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE": "true",
-		"PR0XTEUS_API_TOKEN":                 i.APIToken,
-		"PR0XTEUS_CELL_IMAGE":                cellImage,
-		"PR0XTEUS_CELL_NETWORK":              i.Network.Name,
-		"PR0XTEUS_CELL_CONTROL_NETWORK":      i.ControlNetwork.Name,
+		"PR0XTEUS_API_TOKEN":            i.APIToken,
+		"PR0XTEUS_CELL_NETWORK":         i.Network.Name,
+		"PR0XTEUS_CELL_CONTROL_NETWORK": i.ControlNetwork.Name,
 		// Intentionally the raw host socket, not the socket-proxy: Testcontainers
 		// needs real Docker access to spawn cell containers, so this suite never
 		// exercises the socket-proxy allowlist boundary. That boundary is
@@ -346,6 +346,10 @@ func (i *Infra) setupController(ctx context.Context) error {
 				Repo:       controllerImageRepository,
 				Tag:        filepath.Base(i.workDir),
 				KeepImage:  false,
+				BuildArgs: map[string]*string{
+					"APP_NAME":      &appName,
+					"BUILD_VERSION": &buildVersion,
+				},
 			},
 			Env:      env,
 			Networks: []string{i.ControlNetwork.Name},

@@ -45,9 +45,9 @@ pr0xteus start
 `latest` uses its baked-in `cell-latest` image. A versioned controller uses its
 matching versioned cell. To pin a controller release, set
 `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in
-`~/.config/pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. A deliberate
-`PR0XTEUS_CELL_IMAGE` override must be a released digest and leave
-`PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE=false`.
+`~/.config/pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`.
+The controller pulls that exact matching cell image when it allocates a tunnel;
+the cell image is not an operator setting.
 
 ## Tailscale sidecar
 

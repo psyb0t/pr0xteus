@@ -68,34 +68,15 @@ func TestLoadConfig_Validation(t *testing.T) {
 		wantErr       error
 	}{
 		{
-			name: "requires image digest outside local development",
-			configure: func(t *testing.T) {
-				t.Setenv("PR0XTEUS_CELL_IMAGE", "psyb0t/pr0xteus:cell-dev")
-			},
-			wantErr: ErrConfigInvalid,
+			name:          "uses the development cell by default",
+			wantCellImage: "psyb0t/pr0xteus:cell-dev",
 		},
 		{
-			name: "allows explicit local unpinned image",
+			name: "ignores an environment cell image override",
 			configure: func(t *testing.T) {
-				t.Setenv("PR0XTEUS_CELL_IMAGE", "psyb0t/pr0xteus:cell-dev")
-				t.Setenv("PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE", "true")
+				t.Setenv("PR0XTEUS_CELL_IMAGE", "other/image:wrong")
 			},
-		},
-		{
-			name: "uses release-paired built cell image without an override",
-			configure: func(t *testing.T) {
-				t.Setenv("PR0XTEUS_CELL_IMAGE", "")
-				t.Setenv("PR0XTEUS_BUILT_CELL_IMAGE", "psyb0t/pr0xteus:cell-v0.1.0")
-			},
-			wantCellImage: "psyb0t/pr0xteus:cell-v0.1.0",
-		},
-		{
-			name: "requires an override or a release-paired image",
-			configure: func(t *testing.T) {
-				t.Setenv("PR0XTEUS_CELL_IMAGE", "")
-				t.Setenv("PR0XTEUS_BUILT_CELL_IMAGE", "")
-			},
-			wantErr: ErrConfigInvalid,
+			wantCellImage: "psyb0t/pr0xteus:cell-dev",
 		},
 		{
 			name: "rejects port below range",
@@ -168,18 +149,27 @@ func TestLoadConfig_Validation(t *testing.T) {
 	}
 }
 
+func TestConfigureCellImageVersion(t *testing.T) {
+	ConfigureCellImageVersion("v1.2.3")
+	t.Cleanup(func() {
+		ConfigureCellImageVersion(defaultCellTag)
+	})
+
+	assert.Equal(t, "psyb0t/pr0xteus:cell-v1.2.3", configuredCellImageValue())
+	assert.Equal(t, "psyb0t/pr0xteus:cell-dev", cellImageForVersion("  "))
+
+	configureValidEnvironment(t)
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	assert.Equal(t, "psyb0t/pr0xteus:cell-v1.2.3", cfg.CellImage)
+}
+
 func configureValidEnvironment(t *testing.T) {
 	t.Helper()
 	gonfiguration.Reset()
 	t.Cleanup(gonfiguration.Reset)
 
-	t.Setenv(
-		"PR0XTEUS_CELL_IMAGE",
-		"psyb0t/pr0xteus:cell-v0.1.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	)
-	t.Setenv("PR0XTEUS_BUILT_CELL_IMAGE", "")
 	t.Setenv("PR0XTEUS_CELL_SOCKS_PORT", "1080")
 	t.Setenv("PR0XTEUS_API_TOKEN", "test-only-token")
-	t.Setenv("PR0XTEUS_ALLOW_UNPINNED_CELL_IMAGE", "false")
 	t.Setenv("PR0XTEUS_MANAGED_SCOPE", "unit-test")
 }
