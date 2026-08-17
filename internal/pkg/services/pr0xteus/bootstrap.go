@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/psyb0t/ctxerrors"
@@ -58,6 +60,7 @@ type BootstrapOptions struct {
 	ConfigDir               string
 	HostConfigDir           string
 	ControllerImage         string
+	RuntimeUser             string
 	Development             bool
 	RefreshRuntimeTemplates bool
 }
@@ -76,39 +79,38 @@ type bootstrapFile struct {
 	runtime      bool
 }
 
+type bootstrapInput struct {
+	configDir       string
+	hostConfigDir   string
+	controllerImage string
+	runtimeUser     string
+}
+
 // ConfigCheckOptions defines the local configuration directory to validate.
 type ConfigCheckOptions struct {
 	ConfigDir string
 }
 
 // BootstrapConfig creates a starter configuration without replacing operator
-// files. RefreshRuntimeTemplates updates only the generated Compose files; it
-// deliberately leaves .env, provider material, pools, and routing untouched.
+// files. RefreshRuntimeTemplates updates only generated Compose files. Existing
+// .env content is preserved except the installer-managed runtime user; provider
+// material, pools, and routing always remain untouched.
 func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
-	configDir, err := checkedAbsoluteDirectory(options.ConfigDir, "config directory")
+	input, err := checkedBootstrapInput(options)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
 
-	hostConfigDir, err := checkedAbsolutePath(options.HostConfigDir, "host config directory")
-	if err != nil {
-		return BootstrapResult{}, err
-	}
-
-	controllerImage, err := checkedImageReference(options.ControllerImage)
-	if err != nil {
-		return BootstrapResult{}, err
-	}
-
-	if err := createBootstrapDirectories(configDir); err != nil {
+	if err := createBootstrapDirectories(input.configDir); err != nil {
 		return BootstrapResult{}, err
 	}
 
 	result := BootstrapResult{}
 	if err := writeBootstrapFiles(
-		configDir,
-		hostConfigDir,
-		controllerImage,
+		input.configDir,
+		input.hostConfigDir,
+		input.controllerImage,
+		input.runtimeUser,
 		options.Development,
 		options.RefreshRuntimeTemplates,
 		&result,
@@ -121,19 +123,60 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 		return BootstrapResult{}, err
 	}
 
-	envPath := filepath.Join(configDir, dotEnvFileName)
+	envPath := filepath.Join(input.configDir, dotEnvFileName)
 
 	created, err := writeFileIfAbsent(
 		envPath,
-		[]byte(renderEnvFile(hostConfigDir, controllerImage, token, options.Development)),
+		[]byte(renderEnvFile(
+			input.hostConfigDir,
+			input.controllerImage,
+			input.runtimeUser,
+			token,
+			options.Development,
+		)),
 	)
 	if err != nil {
 		return BootstrapResult{}, err
 	}
 
-	result.add(filepath.Join(hostConfigDir, dotEnvFileName), created)
+	if !created {
+		if err := upsertDotEnvValue(envPath, "PR0XTEUS_RUNTIME_USER", input.runtimeUser); err != nil {
+			return BootstrapResult{}, err
+		}
+	}
+
+	result.add(filepath.Join(input.hostConfigDir, dotEnvFileName), created)
 
 	return result, nil
+}
+
+func checkedBootstrapInput(options BootstrapOptions) (bootstrapInput, error) {
+	configDir, err := checkedAbsoluteDirectory(options.ConfigDir, "config directory")
+	if err != nil {
+		return bootstrapInput{}, err
+	}
+
+	hostConfigDir, err := checkedAbsolutePath(options.HostConfigDir, "host config directory")
+	if err != nil {
+		return bootstrapInput{}, err
+	}
+
+	controllerImage, err := checkedImageReference(options.ControllerImage)
+	if err != nil {
+		return bootstrapInput{}, err
+	}
+
+	runtimeUser, err := checkedRuntimeUser(options.RuntimeUser)
+	if err != nil {
+		return bootstrapInput{}, err
+	}
+
+	return bootstrapInput{
+		configDir:       configDir,
+		hostConfigDir:   hostConfigDir,
+		controllerImage: controllerImage,
+		runtimeUser:     runtimeUser,
+	}, nil
 }
 
 func createBootstrapDirectories(configDir string) error {
@@ -155,6 +198,7 @@ func writeBootstrapFiles(
 	configDir string,
 	hostConfigDir string,
 	controllerImage string,
+	runtimeUser string,
 	development bool,
 	refreshRuntimeTemplates bool,
 	result *BootstrapResult,
@@ -168,7 +212,7 @@ func writeBootstrapFiles(
 	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
 	if err := writeExampleFile(
 		examplePath,
-		[]byte(renderEnvExample(hostConfigDir, controllerImage, development)),
+		[]byte(renderEnvExample(hostConfigDir, controllerImage, runtimeUser, development)),
 	); err != nil {
 		return err
 	}
@@ -330,6 +374,27 @@ func checkedImageReference(value string) (string, error) {
 	return image, nil
 }
 
+func checkedRuntimeUser(value string) (string, error) {
+	runtimeUser := strings.TrimSpace(value)
+	if runtimeUser == "" {
+		return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), nil
+	}
+
+	uid, gid, found := strings.Cut(runtimeUser, ":")
+	if !found || uid == "" || gid == "" || strings.Contains(gid, ":") {
+		return "", ctxerrors.Wrap(ErrConfigInvalid, "runtime user must be UID:GID")
+	}
+
+	for _, component := range []string{uid, gid} {
+		parsed, err := strconv.ParseUint(component, 10, 32)
+		if err != nil || parsed > uint64(^uint32(0)) {
+			return "", ctxerrors.Wrap(ErrConfigInvalid, "runtime user must be UID:GID")
+		}
+	}
+
+	return runtimeUser, nil
+}
+
 func ensurePrivateDirectory(path string) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
@@ -387,6 +452,68 @@ func writeFileIfAbsent(path string, contents []byte) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func upsertDotEnvValue(path string, key string, value string) error {
+	contents, err := readRegularDotEnv(path)
+	if err != nil {
+		return err
+	}
+
+	updated := replaceDotEnvValue(string(contents), key, value)
+	if updated == string(contents) {
+		return nil
+	}
+
+	return writeRefreshedFile(path, []byte(updated), bootstrapFileMode)
+}
+
+func readRegularDotEnv(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "stat .env")
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, ctxerrors.Wrapf(ErrConfigInvalid, "config path %q must be a regular file", path)
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "read .env")
+	}
+
+	return contents, nil
+}
+
+func replaceDotEnvValue(contents string, key string, value string) string {
+	lines := strings.Split(contents, "\n")
+	found := false
+
+	for index, line := range lines {
+		lineKey, _, hasValue := strings.Cut(line, "=")
+		if !hasValue || strings.TrimSpace(lineKey) != key {
+			continue
+		}
+
+		lines[index] = key + "=" + value
+		found = true
+	}
+
+	if !found {
+		if len(lines) == 0 {
+			return key + "=" + value + "\n"
+		}
+
+		if lines[len(lines)-1] == "" {
+			lines[len(lines)-1] = key + "=" + value
+			lines = append(lines, "")
+		} else {
+			lines = append(lines, key+"="+value, "")
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func writeExampleFile(path string, contents []byte) error {
@@ -493,6 +620,7 @@ func loadAPITokenFromDotEnv(path string) ([]byte, error) {
 func renderEnvFile(
 	hostConfigDir string,
 	controllerImage string,
+	runtimeUser string,
 	apiToken string,
 	development bool,
 ) string {
@@ -504,6 +632,7 @@ func renderEnvFile(
 		"# Generated by pr0xteus config init. Keep this file local.",
 		"PR0XTEUS_CONFIG_DIR=" + hostConfigDir,
 		"PR0XTEUS_CONTROLLER_IMAGE=" + controllerImage,
+		"PR0XTEUS_RUNTIME_USER=" + runtimeUser,
 		apiTokenEnvName + "=" + apiToken,
 		"PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000",
 		"PR0XTEUS_METRICS_HOST_PORT=127.0.0.1:9091",
@@ -522,7 +651,12 @@ func renderEnvFile(
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func renderEnvExample(hostConfigDir string, controllerImage string, development bool) string {
+func renderEnvExample(
+	hostConfigDir string,
+	controllerImage string,
+	runtimeUser string,
+	development bool,
+) string {
 	if development {
 		controllerImage = developmentControllerImage
 	}
@@ -533,6 +667,10 @@ func renderEnvExample(hostConfigDir string, controllerImage string, development 
 		"",
 		"# Docker binds this absolute host directory into the controller at the same path.",
 		"PR0XTEUS_CONFIG_DIR=" + hostConfigDir,
+		"",
+		"# The controller runs as this host UID:GID so it can read the private",
+		"# bind-mounted config without making provider files world-readable.",
+		"PR0XTEUS_RUNTIME_USER=" + runtimeUser,
 		"",
 		"# Required private controller bearer token. config init generates a random owner-only value in .env.",
 		apiTokenEnvName + "=REPLACE_ME",

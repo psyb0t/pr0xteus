@@ -86,6 +86,12 @@ required. It pins to the **latest tagged release** — never `:latest` on your
 box — and the controller derives its matching cell image from that tag, so both
 move together only when you upgrade.
 
+The generated stack runs the controller as the installing operator's UID/GID,
+not as root. That lets it read the owner-only config mount without weakening
+your WireGuard-file permissions. `setup` and `upgrade` keep that generated
+`PR0XTEUS_RUNTIME_USER` value current; do not change it unless the config files
+are deliberately owned by another local account.
+
 Right after installing, edit the `.env` in your config directory if you want to
 change the loopback ports, tune logging, or turn on the optional tailnet API
 (below) — everything is a plain key you edit, not a CLI flag to remember.

@@ -75,7 +75,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	assert.Equal(t, env, readBootstrapFixture(t, envPath))
 }
 
-func TestBootstrapConfigRefreshesExampleWithoutReplacingDotEnv(t *testing.T) {
+func TestBootstrapConfigRefreshesExampleAndRuntimeUserWithoutReplacingDotEnv(t *testing.T) {
 	t.Parallel()
 
 	configDir := t.TempDir()
@@ -88,7 +88,14 @@ func TestBootstrapConfigRefreshesExampleWithoutReplacingDotEnv(t *testing.T) {
 
 	envPath := filepath.Join(configDir, dotEnvFileName)
 	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
-	require.NoError(t, os.WriteFile(envPath, []byte("PR0XTEUS_API_TOKEN=keep-me\n"), bootstrapFileMode))
+	require.NoError(
+		t,
+		os.WriteFile(
+			envPath,
+			[]byte("# keep this comment\nPR0XTEUS_API_TOKEN=keep-me\nCUSTOM_VALUE=keep-me\n"),
+			bootstrapFileMode,
+		),
+	)
 	require.NoError(t, os.WriteFile(examplePath, []byte("stale\n"), bootstrapExampleMode))
 
 	result, err := BootstrapConfig(BootstrapOptions{
@@ -97,12 +104,19 @@ func TestBootstrapConfigRefreshesExampleWithoutReplacingDotEnv(t *testing.T) {
 		ControllerImage: "psyb0t/pr0xteus:v9.9.9",
 	})
 	require.NoError(t, err)
+	runtimeUser, err := checkedRuntimeUser("")
+	require.NoError(t, err)
 	assert.Equal(t, []string{filepath.Join(configDir, dotEnvExampleFileName)}, result.Refreshed)
-	assert.Equal(t, "PR0XTEUS_API_TOKEN=keep-me\n", string(readBootstrapFixture(t, envPath)))
+	assert.Equal(
+		t,
+		"# keep this comment\nPR0XTEUS_API_TOKEN=keep-me\nCUSTOM_VALUE=keep-me\nPR0XTEUS_RUNTIME_USER="+
+			runtimeUser+"\n",
+		string(readBootstrapFixture(t, envPath)),
+	)
 	assert.Contains(t, string(readBootstrapFixture(t, examplePath)), "PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:v9.9.9")
 }
 
-func TestBootstrapConfigRefreshesRuntimeTemplatesWithoutReplacingOperatorConfig(t *testing.T) {
+func TestBootstrapConfigRefreshesRuntimeTemplatesAndPreservesOperatorConfig(t *testing.T) {
 	t.Parallel()
 
 	configDir := t.TempDir()
@@ -146,7 +160,8 @@ func TestBootstrapConfigRefreshesRuntimeTemplatesWithoutReplacingOperatorConfig(
 	)
 	assert.Equal(t, "operator-pool\n", string(readBootstrapFixture(t, poolPath)))
 	assert.Equal(t, "operator-routing\n", string(readBootstrapFixture(t, routingPath)))
-	assert.Equal(t, "PR0XTEUS_API_TOKEN=keep-me\n", string(readBootstrapFixture(t, envPath)))
+	assert.Contains(t, string(readBootstrapFixture(t, envPath)), "PR0XTEUS_API_TOKEN=keep-me\n")
+	assert.Contains(t, string(readBootstrapFixture(t, envPath)), "PR0XTEUS_RUNTIME_USER=")
 	assert.Equal(t, string(defaultComposeYAML), string(readBootstrapFixture(t, composePath)))
 	assert.Equal(t, string(defaultHostPortsComposeYAML), string(readBootstrapFixture(t, hostPortsPath)))
 	assert.Equal(t, string(defaultNoHostPortsComposeYAML), string(readBootstrapFixture(t, noHostPortsPath)))
@@ -210,7 +225,12 @@ func TestRootEnvExampleMatchesBootstrapTemplate(t *testing.T) {
 	rootExamplePath := filepath.Join("..", "..", "..", "..", ".env.example")
 	assert.Equal(
 		t,
-		renderEnvExample("/absolute/path/to/pr0xteus", "psyb0t/pr0xteus:vX.Y.Z", false),
+		renderEnvExample(
+			"/absolute/path/to/pr0xteus",
+			"psyb0t/pr0xteus:vX.Y.Z",
+			"1000:1000",
+			false,
+		),
 		string(readBootstrapFixture(t, rootExamplePath)),
 	)
 }
@@ -367,14 +387,46 @@ func TestCheckedImageReference(t *testing.T) {
 func TestRenderEnvFileDevelopmentModeUsesLocalControllerImage(t *testing.T) {
 	t.Parallel()
 
-	env := renderEnvFile("/abs/config", "ignored/in/dev:mode", "dev-token", true)
+	env := renderEnvFile("/abs/config", "ignored/in/dev:mode", "1000:1000", "dev-token", true)
 	assert.Contains(t, env, "PR0XTEUS_CONFIG_DIR=/abs/config")
+	assert.Contains(t, env, "PR0XTEUS_RUNTIME_USER=1000:1000")
 	assert.Contains(t, env, "PR0XTEUS_CONTROLLER_IMAGE="+developmentControllerImage)
 	assert.Contains(t, env, apiTokenEnvName+"=dev-token")
 	assert.Contains(t, env, "PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000")
 	assert.Contains(t, env, "PR0XTEUS_DISABLE_HOST_PORTS=false")
 	assert.NotContains(t, env, "ignored/in/dev:mode")
 	assert.NotContains(t, env, "PR0XTEUS_CELL_IMAGE=")
+}
+
+func TestCheckedRuntimeUser(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{name: "operator uid and gid", value: "1000:1001", want: "1000:1001"},
+		{name: "root", value: "0:0", want: "0:0"},
+		{name: "missing separator", value: "1000", wantErr: true},
+		{name: "non numeric uid", value: "user:1000", wantErr: true},
+		{name: "extra separator", value: "1:2:3", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := checkedRuntimeUser(tc.value)
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrConfigInvalid)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestWriteFileIfAbsentRejectsIrregularTargets(t *testing.T) {
@@ -414,6 +466,85 @@ func TestWriteFileIfAbsentRejectsIrregularTargets(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, again)
 		assert.Equal(t, "hello", string(readBootstrapFixture(t, path)))
+	})
+}
+
+func TestReplaceDotEnvValue(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		contents string
+		want     string
+	}{
+		{
+			name:     "appends after a trailing newline",
+			contents: "CUSTOM_VALUE=keep-me\n",
+			want:     "CUSTOM_VALUE=keep-me\nPR0XTEUS_RUNTIME_USER=1000:1000\n",
+		},
+		{
+			name:     "appends after an unterminated value",
+			contents: "CUSTOM_VALUE=keep-me",
+			want:     "CUSTOM_VALUE=keep-me\nPR0XTEUS_RUNTIME_USER=1000:1000\n",
+		},
+		{
+			name:     "replaces every existing value",
+			contents: "# keep comments\nPR0XTEUS_RUNTIME_USER=1:1\nPR0XTEUS_RUNTIME_USER=2:2\n",
+			want:     "# keep comments\nPR0XTEUS_RUNTIME_USER=1000:1000\nPR0XTEUS_RUNTIME_USER=1000:1000\n",
+		},
+		{
+			name:     "creates a terminated value from empty input",
+			contents: "",
+			want:     "PR0XTEUS_RUNTIME_USER=1000:1000\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, replaceDotEnvValue(tc.contents, "PR0XTEUS_RUNTIME_USER", "1000:1000"))
+		})
+	}
+}
+
+func TestReadRegularDotEnv(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reads a regular file", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), dotEnvFileName)
+		require.NoError(t, os.WriteFile(path, []byte("A=B\n"), bootstrapFileMode))
+
+		contents, err := readRegularDotEnv(path)
+		require.NoError(t, err)
+		assert.Equal(t, "A=B\n", string(contents))
+	})
+
+	t.Run("rejects a missing file", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := readRegularDotEnv(filepath.Join(t.TempDir(), dotEnvFileName))
+		require.Error(t, err)
+	})
+
+	t.Run("rejects a directory", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := readRegularDotEnv(t.TempDir())
+		require.ErrorIs(t, err, ErrConfigInvalid)
+	})
+
+	t.Run("rejects a symlink", func(t *testing.T) {
+		t.Parallel()
+
+		base := t.TempDir()
+		target := filepath.Join(base, "target")
+		require.NoError(t, os.WriteFile(target, []byte("A=B\n"), bootstrapFileMode))
+		link := filepath.Join(base, dotEnvFileName)
+		require.NoError(t, os.Symlink(target, link))
+
+		_, err := readRegularDotEnv(link)
+		require.ErrorIs(t, err, ErrConfigInvalid)
 	})
 }
 

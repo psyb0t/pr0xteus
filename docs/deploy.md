@@ -30,6 +30,12 @@ and routing skeletons plus empty `secrets/wireguard/`; it never manufactures a
 provider configuration. The random bearer token is written directly to
 owner-only `~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
 
+The generated `PR0XTEUS_RUNTIME_USER` is the installing operator's UID:GID.
+Compose runs the controller with that identity so it can read the same
+owner-only config mount that holds the WireGuard material. `setup` and
+`upgrade` refresh that generated value; leave it alone unless you intentionally
+change the config directory owner.
+
 Add real `*.conf` files under `~/.config/pr0xteus/secrets/wireguard/`, then change
 `~/.config/pr0xteus/secrets/pools.yaml` and
 `~/.config/pr0xteus/config/egress-routing.yaml` to reference their basenames. The

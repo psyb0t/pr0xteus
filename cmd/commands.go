@@ -83,6 +83,12 @@ func configureConfigInitFlags(command *cobra.Command, options *pr0xteus.Bootstra
 		"psyb0t/pr0xteus:latest",
 		"published controller image to write into .env",
 	)
+	command.Flags().StringVar(
+		&options.RuntimeUser,
+		"runtime-user",
+		"",
+		"UID:GID used by the controller to read the host-mounted operator config",
+	)
 	command.Flags().BoolVar(
 		&options.Development,
 		"development",

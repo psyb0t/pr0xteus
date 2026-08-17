@@ -165,6 +165,28 @@ pin_env_image() {
 	fi
 }
 
+pin_env_runtime_user() {
+	local env_file="$1" runtime_user="$2"
+
+	[[ -f "$env_file" ]] || return 0
+	if grep -q "^PR0XTEUS_RUNTIME_USER=" "$env_file"; then
+		sed -i "s|^PR0XTEUS_RUNTIME_USER=.*|PR0XTEUS_RUNTIME_USER=${runtime_user}|" "$env_file"
+	else
+		printf 'PR0XTEUS_RUNTIME_USER=%s\n' "$runtime_user" >>"$env_file"
+	fi
+}
+
+installer_runtime_user() {
+	local user="${SUDO_USER:-}"
+	if [[ -n "$user" ]]; then
+		printf '%s:%s\n' "$(id -u "$user")" "$(id -g "$user")"
+
+		return
+	fi
+
+	printf '%s:%s\n' "$(id -u)" "$(id -g)"
+}
+
 write_command() {
 	if [[ -e "$INSTALL_PATH" ]] && ! grep -Fq "$WRAPPER_MARKER" "$INSTALL_PATH"; then
 		fail "$INSTALL_PATH already exists and is not managed by this installer"
@@ -280,6 +302,20 @@ env_set() {
     fi
 }
 
+# operator_runtime_user keeps the controller non-root while allowing it to read
+# the owner-only config bind mount. sudo retains SUDO_USER, so a system install
+# still uses the operator identity instead of root.
+operator_runtime_user() {
+    local user="${SUDO_USER:-}"
+    if [[ -n "$user" ]]; then
+        printf '%s:%s\n' "$(id -u "$user")" "$(id -g "$user")"
+
+        return
+    fi
+
+    printf '%s:%s\n' "$(id -u)" "$(id -g)"
+}
+
 # controller_image is the image the stack pins to: the moving :latest under
 # --rolling, otherwise the pin recorded in .env, falling back to the latest
 # published release when no .env exists yet.
@@ -390,9 +426,10 @@ config_command() {
 }
 
 setup() {
-    local config_dir image wrap
+    local config_dir image runtime_user wrap
     config_dir="$(config_directory)"
     wrap="$(root_wrap "$config_dir")"
+    runtime_user="$(operator_runtime_user)"
 
     $wrap mkdir -p "$config_dir"
     image="$(controller_image "$config_dir")"
@@ -403,6 +440,7 @@ setup() {
     config_command "$config_dir" "$image" init \
         --host-config-dir "$config_dir" \
         --controller-image "$image" \
+        --runtime-user "$runtime_user" \
         --refresh-runtime-templates
 
     # Keep the shared-stack model when setup re-runs against system config.
@@ -415,6 +453,7 @@ setup() {
     # config init preserves an existing .env; re-pin so the recorded image
     # always matches what we just pulled.
     env_set "$config_dir" PR0XTEUS_CONTROLLER_IMAGE "$image"
+    env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
     say "config ready at $config_dir (pinned to $image)"
 }
 
@@ -498,8 +537,9 @@ show_logs() {
 }
 
 upgrade() {
-    local config_dir
+    local config_dir runtime_user
     config_dir="$(config_directory)"
+    runtime_user="$(operator_runtime_user)"
     [[ -f "$config_dir/docker-compose.yml" ]] || fail "run pr0xteus setup first"
 
     if [[ "${PR0XTEUS_ROLLING:-}" == "1" ]]; then
@@ -508,7 +548,9 @@ upgrade() {
         config_command "$config_dir" "$ROLLING_IMAGE" init \
             --host-config-dir "$config_dir" \
             --controller-image "$ROLLING_IMAGE" \
+            --runtime-user "$runtime_user" \
             --refresh-runtime-templates
+        env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
         export PR0XTEUS_CONTROLLER_IMAGE="$ROLLING_IMAGE"
         compose "$config_dir" up --detach
         compose "$config_dir" ps
@@ -530,8 +572,10 @@ upgrade() {
     config_command "$config_dir" "$new_image" init \
         --host-config-dir "$config_dir" \
         --controller-image "$new_image" \
+        --runtime-user "$runtime_user" \
         --refresh-runtime-templates
     env_set "$config_dir" PR0XTEUS_CONTROLLER_IMAGE "$new_image"
+    env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
     export PR0XTEUS_CONTROLLER_IMAGE="$new_image"
     compose "$config_dir" up --detach
     compose "$config_dir" ps
@@ -656,9 +700,10 @@ main() {
 	say "installing pr0xteus ($MODE mode)"
 	prepare_config_dir
 
-	local previous_image image
+	local previous_image image runtime_user
 	previous_image="$(env_pinned_image "$TARGET_CONFIG_DIR/.env")"
 	image="$(resolve_controller_image)"
+	runtime_user="$(installer_runtime_user)"
 
 	say "pinning to $image"
 	docker pull "$image"
@@ -674,11 +719,13 @@ main() {
 		--config-dir /config \
 		--host-config-dir "$TARGET_CONFIG_DIR" \
 		--controller-image "$image" \
+		--runtime-user "$runtime_user" \
 		--refresh-runtime-templates
 
 	# config init preserves an existing .env, so re-pin the image line for the
 	# upgrade case where the .env already existed.
 	pin_env_image "$TARGET_CONFIG_DIR/.env" "$image"
+	pin_env_runtime_user "$TARGET_CONFIG_DIR/.env" "$runtime_user"
 	apply_config_permissions
 	write_command
 	warn_user_path

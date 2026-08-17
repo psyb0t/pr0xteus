@@ -56,6 +56,7 @@ services:
 
   pr0xteus:
     image: ${PR0XTEUS_CONTROLLER_IMAGE:?run pr0xteus setup first}
+    user: ${PR0XTEUS_RUNTIME_USER:?run pr0xteus setup first}
     init: true
     restart: unless-stopped
     read_only: true

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.6 — 2026-08-17
+
+- Fixed installed controller startup with the default owner-only config
+  directory. The generated Compose stack now runs the controller as the
+  installing operator's UID:GID, so it can read WireGuard pools and routing
+  without making them world-readable. `setup` and `upgrade` refresh that value
+  for existing installs.
+
 ## v0.9.5 — 2026-08-17
 
 - Fixed an intermittent end-to-end cell-proxy test failure. The test now waits
