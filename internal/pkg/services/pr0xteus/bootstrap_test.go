@@ -152,6 +152,58 @@ func TestBootstrapConfigRefreshesRuntimeTemplatesWithoutReplacingOperatorConfig(
 	assert.Equal(t, string(defaultNoHostPortsComposeYAML), string(readBootstrapFixture(t, noHostPortsPath)))
 }
 
+func TestWriteBootstrapFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates and preserves an operator file", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "pools.yaml")
+		file := bootstrapFile{
+			path:         path,
+			operatorPath: "/operator/secrets/pools.yaml",
+			data:         []byte("pools: {}\n"),
+		}
+		result := BootstrapResult{}
+
+		require.NoError(t, writeBootstrapFile(file, false, &result))
+		assert.Equal(t, []string{file.operatorPath}, result.Created)
+		assert.Equal(t, "pools: {}\n", string(readBootstrapFixture(t, path)))
+
+		require.NoError(t, writeBootstrapFile(file, false, &result))
+		assert.Equal(t, []string{file.operatorPath}, result.Preserved)
+	})
+
+	t.Run("refreshes a runtime template", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), composeFileName)
+		require.NoError(t, os.WriteFile(path, []byte("stale\n"), bootstrapFileMode))
+		file := bootstrapFile{
+			path:         path,
+			operatorPath: "/operator/docker-compose.yml",
+			data:         []byte("fresh\n"),
+			runtime:      true,
+		}
+		result := BootstrapResult{}
+
+		require.NoError(t, writeBootstrapFile(file, true, &result))
+		assert.Equal(t, []string{file.operatorPath}, result.Refreshed)
+		assert.Equal(t, "fresh\n", string(readBootstrapFixture(t, path)))
+	})
+
+	t.Run("returns a write error", func(t *testing.T) {
+		t.Parallel()
+
+		file := bootstrapFile{
+			path: filepath.Join(t.TempDir(), "missing", "pools.yaml"),
+			data: []byte("pools: {}\n"),
+		}
+
+		require.Error(t, writeBootstrapFile(file, false, &BootstrapResult{}))
+	})
+}
+
 func TestRootEnvExampleMatchesBootstrapTemplate(t *testing.T) {
 	t.Parallel()
 

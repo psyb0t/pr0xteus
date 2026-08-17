@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.3 — 2026-08-17
+
+- Restored the 90% coverage gate after the v0.9.2 bootstrap helper split. The
+  bootstrap file writer now has direct tests for create/preserve, runtime
+  template refresh, and write-error behavior.
+
 ## v0.9.2 — 2026-08-17
 
 - Fixed the release lint failure from v0.9.1. Configuration bootstrap and the
