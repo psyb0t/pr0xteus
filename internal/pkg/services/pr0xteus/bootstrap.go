@@ -25,6 +25,8 @@ const (
 	dotEnvFileName        = ".env"
 	dotEnvExampleFileName = ".env.example"
 	composeFileName       = "docker-compose.yml"
+	hostPortsFileName     = "docker-compose.host-ports.yml"
+	noHostPortsFileName   = "docker-compose.no-host-ports.yml"
 	apiTokenEnvName       = "PR0XTEUS_API_TOKEN" //nolint:gosec // G101 flags the env var NAME, not a secret value
 	poolsRelativePath     = "secrets/pools.yaml"
 	bundleRelativePath    = "secrets/wireguard"
@@ -42,6 +44,12 @@ var defaultRoutingYAML []byte
 
 //go:embed bootstrap/docker-compose.yml
 var defaultComposeYAML []byte
+
+//go:embed bootstrap/docker-compose.host-ports.yml
+var defaultHostPortsComposeYAML []byte
+
+//go:embed bootstrap/docker-compose.no-host-ports.yml
+var defaultNoHostPortsComposeYAML []byte
 
 // BootstrapOptions defines where config init writes local operator material.
 // HostConfigDir is the absolute host path Docker later bind-mounts into the
@@ -156,6 +164,16 @@ func writeBootstrapFiles(
 			filepath.Join(configDir, composeFileName),
 			filepath.Join(hostConfigDir, composeFileName),
 			defaultComposeYAML,
+		},
+		{
+			filepath.Join(configDir, hostPortsFileName),
+			filepath.Join(hostConfigDir, hostPortsFileName),
+			defaultHostPortsComposeYAML,
+		},
+		{
+			filepath.Join(configDir, noHostPortsFileName),
+			filepath.Join(hostConfigDir, noHostPortsFileName),
+			defaultNoHostPortsComposeYAML,
 		},
 	}
 
@@ -450,9 +468,11 @@ func renderEnvFile(
 		"PR0XTEUS_CONFIG_DIR=" + hostConfigDir,
 		"PR0XTEUS_CONTROLLER_IMAGE=" + controllerImage,
 		apiTokenEnvName + "=" + apiToken,
-		"PR0XTEUS_HTTP_PORT=8000",
-		"PR0XTEUS_METRICS_PORT=9091",
-		"PR0XTEUS_SOCKS_PORT=1080",
+		"PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000",
+		"PR0XTEUS_METRICS_HOST_PORT=127.0.0.1:9091",
+		"PR0XTEUS_SOCKS_HOST_PORT=127.0.0.1:1080",
+		"PR0XTEUS_SOCKS_PUBLIC_ADDRESS=127.0.0.1:1080",
+		"PR0XTEUS_DISABLE_HOST_PORTS=false",
 		"PR0XTEUS_TAILSCALE_ENABLED=false",
 		"TS_AUTHKEY=",
 		"TS_HOSTNAME=pr0xteus",
@@ -483,10 +503,20 @@ func renderEnvExample(hostConfigDir string, controllerImage string, development 
 		"# Published controller image. setup and upgrade pin this automatically to a release.",
 		"PR0XTEUS_CONTROLLER_IMAGE=" + controllerImage,
 		"",
-		"# Ports stay loopback-only in docker-compose.yml.",
-		"PR0XTEUS_HTTP_PORT=8000",
-		"PR0XTEUS_METRICS_PORT=9091",
-		"PR0XTEUS_SOCKS_PORT=1080",
+		"# Host-port bindings. Each value is HOST:PORT; defaults stay on host loopback.",
+		"# Use a real protected host address when changing SOCKS_HOST_PORT: 0.0.0.0 is",
+		"# valid for binding every interface but is not an address a client can use.",
+		"PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000",
+		"PR0XTEUS_METRICS_HOST_PORT=127.0.0.1:9091",
+		"PR0XTEUS_SOCKS_HOST_PORT=127.0.0.1:1080",
+		"",
+		"# Address returned in allocated SOCKS URLs. Keep it aligned with the reachable",
+		"# SOCKS host port; do not use 0.0.0.0 here.",
+		"PR0XTEUS_SOCKS_PUBLIC_ADDRESS=127.0.0.1:1080",
+		"",
+		"# Set true to remove every pr0xteus host-port binding. Use this for the",
+		"# Tailscale sidecar or another private Docker-network gateway.",
+		"PR0XTEUS_DISABLE_HOST_PORTS=false",
 		"",
 		"# Optional tailnet-only API. Set true and provide a key from your own tailnet.",
 		"PR0XTEUS_TAILSCALE_ENABLED=false",

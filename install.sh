@@ -329,6 +329,25 @@ tailscale_enabled() {
     esac
 }
 
+host_ports_disabled() {
+    local config_dir="$1"
+    local disabled
+
+    disabled="$(env_value "$config_dir" "PR0XTEUS_DISABLE_HOST_PORTS")"
+
+    case "$disabled" in
+    "" | false)
+        return 1
+        ;;
+    true)
+        return 0
+        ;;
+    *)
+        fail "PR0XTEUS_DISABLE_HOST_PORTS must be true or false"
+        ;;
+    esac
+}
+
 compose() {
     local config_dir="$1"
     shift
@@ -343,6 +362,16 @@ compose() {
         --env-file "$config_dir/.env"
         -f "$config_dir/docker-compose.yml"
     )
+
+    local ports_file
+    if host_ports_disabled "$config_dir"; then
+        ports_file="$config_dir/docker-compose.no-host-ports.yml"
+    else
+        ports_file="$config_dir/docker-compose.host-ports.yml"
+    fi
+    [[ -f "$ports_file" ]] || fail "missing $ports_file; run pr0xteus setup"
+    command+=(-f "$ports_file")
+
     "${command[@]}" "$@"
 }
 

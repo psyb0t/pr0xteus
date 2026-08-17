@@ -19,7 +19,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 		ControllerImage: defaultControllerImage,
 	})
 	require.NoError(t, err)
-	assert.Len(t, result.Created, 4)
+	assert.Len(t, result.Created, 6)
 	assert.Empty(t, result.Preserved)
 	assert.Len(t, result.Refreshed, 1)
 
@@ -39,15 +39,23 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	poolPath := filepath.Join(configDir, poolsRelativePath)
 	routingPath := filepath.Join(configDir, routingRelativePath)
 	composePath := filepath.Join(configDir, composeFileName)
+	hostPortsPath := filepath.Join(configDir, hostPortsFileName)
+	noHostPortsPath := filepath.Join(configDir, noHostPortsFileName)
 	poolBefore, err := os.ReadFile(poolPath)
 	require.NoError(t, err)
 	routingBefore, err := os.ReadFile(routingPath)
 	require.NoError(t, err)
 	composeBefore, err := os.ReadFile(composePath)
 	require.NoError(t, err)
+	hostPortsBefore, err := os.ReadFile(hostPortsPath)
+	require.NoError(t, err)
+	noHostPortsBefore, err := os.ReadFile(noHostPortsPath)
+	require.NoError(t, err)
 	assert.Contains(t, string(composeBefore), "name: pr0xteus")
 	assert.Contains(t, string(composeBefore), "docker-socket-proxy")
 	assert.Contains(t, string(composeBefore), "tailscale/tailscale")
+	assert.Contains(t, string(hostPortsBefore), "PR0XTEUS_HTTP_HOST_PORT")
+	assert.Contains(t, string(noHostPortsBefore), "ports: !reset []")
 	require.DirExists(t, filepath.Join(configDir, tailscaleStatePath))
 
 	secondResult, err := BootstrapConfig(BootstrapOptions{
@@ -57,11 +65,13 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	})
 	require.NoError(t, err)
 	assert.Empty(t, secondResult.Created)
-	assert.Len(t, secondResult.Preserved, 4)
+	assert.Len(t, secondResult.Preserved, 6)
 	assert.Len(t, secondResult.Refreshed, 1)
 	assert.Equal(t, poolBefore, readBootstrapFixture(t, poolPath))
 	assert.Equal(t, routingBefore, readBootstrapFixture(t, routingPath))
 	assert.Equal(t, composeBefore, readBootstrapFixture(t, composePath))
+	assert.Equal(t, hostPortsBefore, readBootstrapFixture(t, hostPortsPath))
+	assert.Equal(t, noHostPortsBefore, readBootstrapFixture(t, noHostPortsPath))
 	assert.Equal(t, env, readBootstrapFixture(t, envPath))
 }
 
@@ -101,6 +111,27 @@ func TestRootEnvExampleMatchesBootstrapTemplate(t *testing.T) {
 		renderEnvExample("/absolute/path/to/pr0xteus", "psyb0t/pr0xteus:vX.Y.Z", false),
 		string(readBootstrapFixture(t, rootExamplePath)),
 	)
+}
+
+func TestRootNoHostPortsComposeMatchesBootstrapTemplate(t *testing.T) {
+	t.Parallel()
+
+	rootComposePath := filepath.Join("..", "..", "..", "..", noHostPortsFileName)
+	assert.Equal(t, string(defaultNoHostPortsComposeYAML), string(readBootstrapFixture(t, rootComposePath)))
+}
+
+func TestRootHostPortsComposeMatchesBootstrapTemplate(t *testing.T) {
+	t.Parallel()
+
+	rootComposePath := filepath.Join("..", "..", "..", "..", hostPortsFileName)
+	assert.Equal(t, string(defaultHostPortsComposeYAML), string(readBootstrapFixture(t, rootComposePath)))
+}
+
+func TestRootComposeMatchesBootstrapTemplate(t *testing.T) {
+	t.Parallel()
+
+	rootComposePath := filepath.Join("..", "..", "..", "..", composeFileName)
+	assert.Equal(t, string(defaultComposeYAML), string(readBootstrapFixture(t, rootComposePath)))
 }
 
 func TestCheckConfigValidatesGeneratedTokenAndOperatorFiles(t *testing.T) {
@@ -238,6 +269,8 @@ func TestRenderEnvFileDevelopmentModeUsesLocalControllerImage(t *testing.T) {
 	assert.Contains(t, env, "PR0XTEUS_CONFIG_DIR=/abs/config")
 	assert.Contains(t, env, "PR0XTEUS_CONTROLLER_IMAGE="+developmentControllerImage)
 	assert.Contains(t, env, apiTokenEnvName+"=dev-token")
+	assert.Contains(t, env, "PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000")
+	assert.Contains(t, env, "PR0XTEUS_DISABLE_HOST_PORTS=false")
 	assert.NotContains(t, env, "ignored/in/dev:mode")
 	assert.NotContains(t, env, "PR0XTEUS_CELL_IMAGE=")
 }

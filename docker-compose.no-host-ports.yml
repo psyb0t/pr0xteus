@@ -1,0 +1,6 @@
+# Applied by the pr0xteus wrapper when PR0XTEUS_DISABLE_HOST_PORTS=true.
+# Keep controller traffic inside Docker for a Tailscale sidecar or another
+# private-network gateway.
+services:
+  pr0xteus:
+    ports: !reset []

@@ -2,9 +2,10 @@
 
 Pr0xteus is private egress plumbing. A trusted client receives a SOCKS5 URL
 only after the controller has started a WireGuard-backed cell and seen a
-handshake. It is not an internet-facing proxy. Keep the controller on loopback
-or an authenticated private network, and use WireGuard material you are
-allowed to use.
+handshake. It is not an internet-facing proxy. Keep the controller on loopback,
+remove host bindings for an authenticated private-network gateway, or
+deliberately configure another protected bind address. Use WireGuard material
+you are allowed to use.
 
 For the full operator walkthrough, see
 [docs/complete-example.md](../../../../docs/complete-example.md). This page is
@@ -94,8 +95,9 @@ image), and `pr0xteus uninstall` (prompts before deleting
 `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade` to use the moving
 `:latest` image for one run.
 
-To reach the controller from a tailnet instead of loopback-only, see the
-`PR0XTEUS_TAILSCALE_ENABLED` sidecar option in
+To reach the controller from a tailnet without binding controller ports on the
+host, set `PR0XTEUS_TAILSCALE_ENABLED=true` and
+`PR0XTEUS_DISABLE_HOST_PORTS=true`; see the sidecar option in
 [docs/deploy.md](../../../../docs/deploy.md#tailscale-sidecar).
 
 ## Run it with Docker directly
@@ -123,8 +125,14 @@ docker run --rm --user "$(id -u):$(id -g)" \
 # and PR0XTEUS_API_TOKEN in .env (see above), then bring the stack up:
 docker compose --project-directory "$config_dir" \
   --env-file "$config_dir/.env" \
-  -f "$config_dir/docker-compose.yml" up -d
+  -f "$config_dir/docker-compose.yml" \
+  -f "$config_dir/docker-compose.host-ports.yml" up -d
 ```
+
+If `.env` sets `PR0XTEUS_DISABLE_HOST_PORTS=true`, add
+`-f "$config_dir/docker-compose.no-host-ports.yml"` after the base Compose
+file *instead of* `docker-compose.host-ports.yml`. The wrapper does this
+automatically.
 
 `--host-config-dir` must be the real host path so the controller can bind one
 chosen WireGuard file into a cell. This is exactly what `pr0xteus setup` +

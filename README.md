@@ -42,9 +42,11 @@ routing are operator-owned local files; callers cannot name configs, images,
 Docker arguments, or host paths.
 
 It is not an open proxy. The control API needs a bearer token, binds to host
-loopback in the supplied Compose stack, and reaches Docker only through a
-restricted socket proxy. Caller input picks a configured country or pool — not
-an image, a host path, or a provider config.
+loopback by default in the supplied Compose stack, and reaches Docker only
+through a restricted socket proxy. You can remove every host binding for a
+private Docker-network gateway, or explicitly choose another bind address.
+Caller input picks a configured country or pool — not an image, a host path, or
+a provider config.
 
 ## Quick start
 
@@ -147,12 +149,13 @@ actual host-side egress proof.
 
 ## Tailscale
 
-Want the same private API from another machine without opening a host port?
-Give the installed stack its own Tailscale identity. Set these in
+Want the same private API from another machine without opening any pr0xteus
+host port? Give the installed stack its own Tailscale identity. Set these in
 `~/.config/pr0xteus/.env`, then run `pr0xteus start`:
 
 ```dotenv
 PR0XTEUS_TAILSCALE_ENABLED=true
+PR0XTEUS_DISABLE_HOST_PORTS=true
 TS_AUTHKEY=tskey-auth-xxxx        # reusable or ephemeral auth key
 TS_HOSTNAME=pr0xteus              # tailnet machine name
 TS_EXTRA_ARGS=--accept-dns=false  # extra `tailscale up` flags (see below)
@@ -160,13 +163,23 @@ TS_EXTRA_ARGS=--accept-dns=false  # extra `tailscale up` flags (see below)
 
 That starts an optional sidecar in its own network namespace, waits for it to
 join your tailnet, and configures Tailscale Serve to proxy
-`http://pr0xteus/v1/...` to the private controller. It exposes no host port,
-does not touch a host Tailscale client, and still requires the bearer token.
-The sidecar's tailnet state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps
-the same identity across restarts.
+`http://pr0xteus/v1/...` to the private controller. With
+`PR0XTEUS_DISABLE_HOST_PORTS=true`, the controller, metrics, and SOCKS gateway
+have no host binding at all: the sidecar reaches the controller only through
+the internal Docker `control` network. It does not touch a host Tailscale
+client, and the tailnet API still requires the bearer token. The sidecar's
+tailnet state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps the
+same identity across restarts.
 
-**Those three values are the only ones you set.** The compose file fixes the
-rest for *kernel-mode* Tailscale — `TS_USERSPACE=false` with `NET_ADMIN`,
+For the normal host-local path, leave `PR0XTEUS_DISABLE_HOST_PORTS=false` (the
+default). The `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT` mappings
+and default to `127.0.0.1`. Set one to `0.0.0.0:PORT` only when an authenticated
+private boundary protects that port. If you change the SOCKS binding, also set
+`PR0XTEUS_SOCKS_PUBLIC_ADDRESS` to a real address clients can reach; `0.0.0.0`
+is a bind-all address, not a client destination.
+
+**Those values are the only Tailscale setup you need.** The compose file fixes
+the rest for *kernel-mode* Tailscale — `TS_USERSPACE=false` with `NET_ADMIN`,
 `NET_RAW`, and `/dev/net/tun` — so the sidecar runs a real `tailscale0`
 interface and outbound traffic to `100.64.0.0/10` uses the sidecar's own tailnet
 identity, not the host's. `TS_STATE_DIR` is likewise fixed to the bind-mounted
@@ -212,6 +225,18 @@ docker run --rm --user "$(id -u):$(id -g)" \
 docker compose --project-directory "$HOME/.config/pr0xteus" \
   --env-file "$HOME/.config/pr0xteus/.env" \
   -f "$HOME/.config/pr0xteus/docker-compose.yml" \
+  -f "$HOME/.config/pr0xteus/docker-compose.host-ports.yml" \
+  up --detach --pull always
+```
+
+If `.env` has `PR0XTEUS_DISABLE_HOST_PORTS=true`, use the generated no-host
+override instead of the host-ports override:
+
+```bash
+docker compose --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
+  -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
   up --detach --pull always
 ```
 
@@ -337,9 +362,12 @@ GET    /metrics                # Prometheus, separate metrics listener
 `POST /v1/proxies` returns a short-lived, credentialed `socks5://` URL only
 after the cell has completed its WireGuard handshake wait. The URL targets the
 controller's loopback-published SOCKS gateway by default, so normal host
-clients do not need Docker network membership. `GET /v1/proxies` lists live
-tunnels with `lastUsedAt`, their latest issued lease URL and expiry, and exit
-metadata; it does not create a cell or a new lease.
+clients do not need Docker network membership. It has no host-reachable SOCKS
+address when `PR0XTEUS_DISABLE_HOST_PORTS=true`; use that mode for a tailnet API
+or another internal controller gateway, not host-side SOCKS clients.
+`GET /v1/proxies` lists live tunnels with `lastUsedAt`, their latest issued
+lease URL and expiry, and exit metadata; it does not create a cell or a new
+lease.
 
 `GET /v1/cells` is the observability view. It uses `limit` and `offset` like
 the other collections, discovers cells straight from Docker (by a
@@ -469,7 +497,8 @@ re-implementing the HTTP contract.
 - The raw Docker socket is only mounted into `docker-socket-proxy`, never the
   controller or cells.
 - The controller is non-root, read-only, capability-empty, resource-capped,
-  log-capped, and exposes only loopback ports.
+  and log-capped. Its ports default to loopback and can be removed altogether
+  for an internal gateway; all-interface publication is explicit.
 - Optional tailnet access is a separate, capability-minimized Tailscale
   sidecar. It is the only service with `/dev/net/tun`, `NET_ADMIN`, and
   `NET_RAW`; it has its own tailnet identity and exposes only the authenticated

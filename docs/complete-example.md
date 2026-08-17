@@ -91,11 +91,12 @@ alive; it does not prove that a provider tunnel can be allocated right now.
 
 ### Optional: put the API on your tailnet
 
-Keep the loopback listener, then add this to `~/.config/pr0xteus/.env` and start
-again:
+To route only through the sidecar, remove all pr0xteus host-port bindings. Add
+this to `~/.config/pr0xteus/.env` and start again:
 
 ```dotenv
 PR0XTEUS_TAILSCALE_ENABLED=true
+PR0XTEUS_DISABLE_HOST_PORTS=true
 TS_AUTHKEY=your-tailscale-auth-key
 TS_HOSTNAME=pr0xteus
 ```
@@ -105,9 +106,12 @@ pr0xteus start
 ```
 
 The optional sidecar gets its own tailnet identity and proxies
-`http://pr0xteus/v1/...` to the controller through Tailscale Serve. It opens
-no host port; the bearer token below is still required. Its identity survives
-restarts in `~/.config/pr0xteus/tailscale/state`.
+`http://pr0xteus/v1/...` to the controller through Tailscale Serve. This makes
+the hop entirely internal to Docker: the controller, metrics, and SOCKS ports
+are not bound on the host. The bearer token below is still required. Its
+identity survives restarts in `~/.config/pr0xteus/tailscale/state`. Use the
+tailnet URL for API calls in this mode; the loopback examples below apply to
+the default `PR0XTEUS_DISABLE_HOST_PORTS=false` deployment.
 
 ## 4. Allocate one configured exit
 
@@ -145,6 +149,8 @@ That URL targets the controller's loopback SOCKS gateway. It is usable from the
 host shell or any trusted client that can reach that listener; the controller
 validates its lease credentials, forwards bytes to the selected cell over the
 internal control network, and the cell resolves and egresses through WireGuard.
+When `PR0XTEUS_DISABLE_HOST_PORTS=true`, this host-side SOCKS URL is not
+available; that mode is for an internal gateway such as the Tailscale sidecar.
 
 ## 5. Prove traffic uses the WireGuard exit
 

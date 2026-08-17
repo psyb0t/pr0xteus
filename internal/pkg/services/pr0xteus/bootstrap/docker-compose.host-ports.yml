@@ -1,0 +1,9 @@
+# Applied by the pr0xteus wrapper unless PR0XTEUS_DISABLE_HOST_PORTS=true.
+# This replaces any ports block from an older generated Compose file without
+# replacing the operator-owned base file itself.
+services:
+  pr0xteus:
+    ports: !override
+      - "${PR0XTEUS_HTTP_HOST_PORT:-127.0.0.1:8000}:8000"
+      - "${PR0XTEUS_METRICS_HOST_PORT:-127.0.0.1:9091}:9091"
+      - "${PR0XTEUS_SOCKS_HOST_PORT:-127.0.0.1:1080}:1080"

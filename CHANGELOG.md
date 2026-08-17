@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.9.0 — 2026-08-17
+
+**Breaking before 1.0:** host-port settings now use complete `HOST:PORT`
+values: `PR0XTEUS_HTTP_HOST_PORT`, `PR0XTEUS_METRICS_HOST_PORT`, and
+`PR0XTEUS_SOCKS_HOST_PORT`. If you customized the old `*_PORT` settings, move
+each value to its matching new variable with the intended bind address. Also
+set `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` to the real address clients should receive
+in lease URLs — never `0.0.0.0`.
+
+- Added `PR0XTEUS_DISABLE_HOST_PORTS=false`. Set it to `true` to remove every
+  controller, metrics, and SOCKS host binding, leaving a Tailscale sidecar or
+  another private Docker-network gateway as the only route in.
+- Added generated host-port and no-host-port Compose overlays. The installed
+  command chooses one on every Compose call, so `pr0xteus upgrade` can add the
+  new behavior without replacing the operator-owned base Compose file.
+- Tailscale deployment docs now use `PR0XTEUS_DISABLE_HOST_PORTS=true` for an
+  entirely internal controller-to-sidecar hop.
+
 ## v0.8.3 — 2026-08-17
 
 - Made the Makefile development image fully vendored. It no longer makes an

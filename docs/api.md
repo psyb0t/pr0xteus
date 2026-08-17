@@ -2,9 +2,11 @@
 
 The control API is a small private HTTP API. It is versioned under `/v1`,
 requires `Authorization: Bearer <token>` on every route, and is loopback-bound
-by the supplied Compose stack. `POST /v1/proxies` allocates one SOCKS5 lease;
-`GET /v1/proxies` lists active exits. The shared path is intentional: POST is
-the state-changing collection action and GET is the read-only collection view.
+by default in the supplied Compose stack. `PR0XTEUS_DISABLE_HOST_PORTS=true`
+removes every host binding for a private Docker-network gateway such as the
+Tailscale sidecar. `POST /v1/proxies` allocates one SOCKS5 lease; `GET
+/v1/proxies` lists active exits. The shared path is intentional: POST is the
+state-changing collection action and GET is the read-only collection view.
 
 For a safe manual request and a real SOCKS5 egress proof, follow
 [complete-example.md](complete-example.md). The handler and pool state behind
