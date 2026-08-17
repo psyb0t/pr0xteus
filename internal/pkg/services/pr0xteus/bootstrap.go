@@ -55,10 +55,11 @@ var defaultNoHostPortsComposeYAML []byte
 // HostConfigDir is the absolute host path Docker later bind-mounts into the
 // controller at that same path for safe per-cell WireGuard file mounts.
 type BootstrapOptions struct {
-	ConfigDir       string
-	HostConfigDir   string
-	ControllerImage string
-	Development     bool
+	ConfigDir               string
+	HostConfigDir           string
+	ControllerImage         string
+	Development             bool
+	RefreshRuntimeTemplates bool
 }
 
 // BootstrapResult describes writes without exposing the generated bearer token.
@@ -74,8 +75,8 @@ type ConfigCheckOptions struct {
 }
 
 // BootstrapConfig creates a starter configuration without replacing operator
-// files. It deliberately leaves the WireGuard bundle empty because only the
-// operator can supply a real provider or private-network config.
+// files. RefreshRuntimeTemplates updates only the generated Compose files; it
+// deliberately leaves .env, provider material, pools, and routing untouched.
 func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 	configDir, err := checkedAbsoluteDirectory(options.ConfigDir, "config directory")
 	if err != nil {
@@ -97,7 +98,14 @@ func BootstrapConfig(options BootstrapOptions) (BootstrapResult, error) {
 	}
 
 	result := BootstrapResult{}
-	if err := writeBootstrapFiles(configDir, hostConfigDir, controllerImage, options.Development, &result); err != nil {
+	if err := writeBootstrapFiles(
+		configDir,
+		hostConfigDir,
+		controllerImage,
+		options.Development,
+		options.RefreshRuntimeTemplates,
+		&result,
+	); err != nil {
 		return BootstrapResult{}, err
 	}
 
@@ -141,43 +149,58 @@ func writeBootstrapFiles(
 	hostConfigDir string,
 	controllerImage string,
 	development bool,
+	refreshRuntimeTemplates bool,
 	result *BootstrapResult,
 ) error {
 	type bootstrapFile struct {
 		path         string
 		operatorPath string
 		data         []byte
+		runtime      bool
 	}
 
 	files := []bootstrapFile{
 		{
-			filepath.Join(configDir, poolsRelativePath),
-			filepath.Join(hostConfigDir, poolsRelativePath),
-			defaultPoolsYAML,
+			path:         filepath.Join(configDir, poolsRelativePath),
+			operatorPath: filepath.Join(hostConfigDir, poolsRelativePath),
+			data:         defaultPoolsYAML,
 		},
 		{
-			filepath.Join(configDir, routingRelativePath),
-			filepath.Join(hostConfigDir, routingRelativePath),
-			defaultRoutingYAML,
+			path:         filepath.Join(configDir, routingRelativePath),
+			operatorPath: filepath.Join(hostConfigDir, routingRelativePath),
+			data:         defaultRoutingYAML,
 		},
 		{
-			filepath.Join(configDir, composeFileName),
-			filepath.Join(hostConfigDir, composeFileName),
-			defaultComposeYAML,
+			path:         filepath.Join(configDir, composeFileName),
+			operatorPath: filepath.Join(hostConfigDir, composeFileName),
+			data:         defaultComposeYAML,
+			runtime:      true,
 		},
 		{
-			filepath.Join(configDir, hostPortsFileName),
-			filepath.Join(hostConfigDir, hostPortsFileName),
-			defaultHostPortsComposeYAML,
+			path:         filepath.Join(configDir, hostPortsFileName),
+			operatorPath: filepath.Join(hostConfigDir, hostPortsFileName),
+			data:         defaultHostPortsComposeYAML,
+			runtime:      true,
 		},
 		{
-			filepath.Join(configDir, noHostPortsFileName),
-			filepath.Join(hostConfigDir, noHostPortsFileName),
-			defaultNoHostPortsComposeYAML,
+			path:         filepath.Join(configDir, noHostPortsFileName),
+			operatorPath: filepath.Join(hostConfigDir, noHostPortsFileName),
+			data:         defaultNoHostPortsComposeYAML,
+			runtime:      true,
 		},
 	}
 
 	for _, file := range files {
+		if refreshRuntimeTemplates && file.runtime {
+			if err := writeRefreshedFile(file.path, file.data, bootstrapFileMode); err != nil {
+				return err
+			}
+
+			result.Refreshed = append(result.Refreshed, file.operatorPath)
+
+			continue
+		}
+
 		created, err := writeFileIfAbsent(file.path, file.data)
 		if err != nil {
 			return err
@@ -357,6 +380,10 @@ func writeFileIfAbsent(path string, contents []byte) (bool, error) {
 }
 
 func writeExampleFile(path string, contents []byte) error {
+	return writeRefreshedFile(path, contents, bootstrapExampleMode)
+}
+
+func writeRefreshedFile(path string, contents []byte, mode os.FileMode) error {
 	if err := validateExamplePath(path); err != nil {
 		return err
 	}
@@ -372,7 +399,7 @@ func writeExampleFile(path string, contents []byte) error {
 		_ = os.Remove(temporaryPath) // best-effort cleanup after a failed replacement.
 	}()
 
-	if err := temporaryFile.Chmod(bootstrapExampleMode); err != nil {
+	if err := temporaryFile.Chmod(mode); err != nil {
 		_ = temporaryFile.Close()
 
 		return ctxerrors.Wrap(err, "set config example permissions")

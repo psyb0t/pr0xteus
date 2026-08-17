@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.1 — 2026-08-17
+
+- Fixed the installed command on owner-only configuration directories. `start`
+  and `restart` now validate `.env` as the configuration owner instead of
+  failing with a misleading permission error before Compose starts.
+- `setup` and `upgrade` now refresh the generated base and host-port Compose
+  templates alongside `.env.example`, while preserving operator-owned `.env`,
+  pool and routing policy, WireGuard files, and Tailscale state. This delivers
+  new runtime wiring to an existing install without making users rebuild their
+  configuration.
+
 ## v0.9.0 — 2026-08-17
 
 **Breaking before 1.0:** host-port settings now use complete `HOST:PORT`

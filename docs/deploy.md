@@ -22,12 +22,13 @@ stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
 `docker` group — see the [README](../README.md); the paths below then live under
 `/etc/pr0xteus` instead of `~/.config/pr0xteus`.
 
-The installer creates `~/.config/pr0xteus/`, writes the local `docker-compose.yml`,
-and adds the `pr0xteus` command. It preserves real config on a later run. It
-creates `.env`, refreshes `.env.example`, creates pool and routing skeletons,
-and creates empty `secrets/wireguard/`; it never manufactures a provider
-configuration. The random bearer token is written directly to owner-only
-`~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
+The installer creates `~/.config/pr0xteus/`, writes managed local Compose
+templates, and adds the `pr0xteus` command. A later installer run, `setup`, or
+`upgrade` refreshes only those templates and `.env.example`; it preserves
+`.env`, pools, routing, WireGuard files, and Tailscale state. It creates pool
+and routing skeletons plus empty `secrets/wireguard/`; it never manufactures a
+provider configuration. The random bearer token is written directly to
+owner-only `~/.config/pr0xteus/.env` as `PR0XTEUS_API_TOKEN`.
 
 Add real `*.conf` files under `~/.config/pr0xteus/secrets/wireguard/`, then change
 `~/.config/pr0xteus/secrets/pools.yaml` and
@@ -49,9 +50,9 @@ matching versioned cell. To pin a controller release, set
 The controller pulls that exact matching cell image when it allocates a tunnel;
 the cell image is not an operator setting.
 
-After upgrading to this release, run `pr0xteus setup` once. It adds the two
-generated port overlays while preserving your existing `.env` and base Compose
-file.
+After upgrading to a release with new runtime wiring, run `pr0xteus setup`.
+It refreshes the managed base and port-overlay Compose files while preserving
+your existing operator configuration.
 
 ## Tailscale sidecar
 

@@ -29,7 +29,7 @@ func buildConfigInitCommand() *cobra.Command {
 
 	command := &cobra.Command{
 		Use:   "init",
-		Short: "Create missing local configuration without overwriting it",
+		Short: "Create missing local configuration without overwriting operator files",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			result, err := pr0xteus.BootstrapConfig(options)
@@ -78,6 +78,12 @@ func buildConfigInitCommand() *cobra.Command {
 		"development",
 		false,
 		"write local image tags for source development",
+	)
+	command.Flags().BoolVar(
+		&options.RefreshRuntimeTemplates,
+		"refresh-runtime-templates",
+		false,
+		"refresh generated Docker Compose templates without changing operator config",
 	)
 
 	return command

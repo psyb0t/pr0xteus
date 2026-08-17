@@ -77,12 +77,14 @@ That puts the command in `/usr/local/bin/` and the config in `/etc/pr0xteus/`
 (root-owned, readable by the `docker` group). The mode is chosen from who runs
 it — root → system-wide, otherwise per-user — and `--system` / `--user` force it.
 
-Either way it drops the local `docker-compose.yml` and starter config, generates
-a bearer token in an owner-only `.env`, refreshes a readable `.env.example`,
-and installs the `pr0xteus` command. `.env` is never replaced. No source
-checkout required. It pins to the **latest tagged release** — never `:latest`
-on your box — and the controller derives its matching cell image from that tag,
-so both move together only when you upgrade.
+Either way it drops managed local Compose templates and starter config,
+generates a bearer token in an owner-only `.env`, refreshes a readable
+`.env.example`, and installs the `pr0xteus` command. Later `setup` and
+`upgrade` refresh only those managed Compose templates; `.env`, pools, routing,
+WireGuard files, and Tailscale state are never replaced. No source checkout
+required. It pins to the **latest tagged release** — never `:latest` on your
+box — and the controller derives its matching cell image from that tag, so both
+move together only when you upgrade.
 
 Right after installing, edit the `.env` in your config directory if you want to
 change the loopback ports, tune logging, or turn on the optional tailnet API
@@ -139,10 +141,11 @@ pr0xteus upgrade     # re-pin to the newest release, pull it, drop the old image
 pr0xteus uninstall   # stop the stack, remove the command, ask before deleting data
 ```
 
-`upgrade` refreshes `.env.example`, re-pins `~/.config/pr0xteus/.env` to the
-latest release, and removes the previous image so dangling layers don't pile
-up; `uninstall` only deletes your `~/.config/pr0xteus` data and volumes if you
-say yes at the prompt.
+`setup` and `upgrade` refresh `.env.example` and the managed Compose templates
+while preserving operator config. `upgrade` also re-pins
+`~/.config/pr0xteus/.env` to the selected image and removes the previous image
+so dangling layers do not pile up; `uninstall` only deletes your
+`~/.config/pr0xteus` data and volumes if you say yes at the prompt.
 
 The [complete example](#complete-example) below shows an allocation and an
 actual host-side egress proof.

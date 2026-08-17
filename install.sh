@@ -205,7 +205,7 @@ usage() {
 Usage: pr0xteus <command> [--rolling]
 
 Commands:
-  setup      Create the config (compose + config) without replacing your config
+  setup      Refresh managed Compose templates without replacing your config
   start      Validate the config, pull the pinned images, and start the stack
   stop       Stop the pr0xteus stack
   restart    Restart the stack
@@ -402,7 +402,8 @@ setup() {
     say "writing config into $config_dir"
     config_command "$config_dir" "$image" init \
         --host-config-dir "$config_dir" \
-        --controller-image "$image"
+        --controller-image "$image" \
+        --refresh-runtime-templates
 
     # Keep the shared-stack model when setup re-runs against system config.
     if [[ -n "$wrap" ]] && getent group docker >/dev/null 2>&1; then
@@ -418,12 +419,15 @@ setup() {
 }
 
 check_config() {
-    local config_dir image
+    local config_dir image wrap owner
     config_dir="$(config_directory)"
     image="$(controller_image "$config_dir")"
+    wrap="$(root_wrap "$config_dir")"
+    if [[ -n "$wrap" ]]; then owner="0:0"; else owner="$(id -u):$(id -g)"; fi
     [[ -f "$config_dir/docker-compose.yml" ]] || fail "run pr0xteus setup first"
 
-    docker run --rm \
+    $wrap docker run --rm \
+        --user "$owner" \
         -v "$config_dir:/config:ro" \
         "$image" config check --config-dir /config
 }
@@ -503,7 +507,8 @@ upgrade() {
         docker pull "$ROLLING_IMAGE"
         config_command "$config_dir" "$ROLLING_IMAGE" init \
             --host-config-dir "$config_dir" \
-            --controller-image "$ROLLING_IMAGE"
+            --controller-image "$ROLLING_IMAGE" \
+            --refresh-runtime-templates
         export PR0XTEUS_CONTROLLER_IMAGE="$ROLLING_IMAGE"
         compose "$config_dir" up --detach
         compose "$config_dir" ps
@@ -524,7 +529,8 @@ upgrade() {
     docker pull "$new_image"
     config_command "$config_dir" "$new_image" init \
         --host-config-dir "$config_dir" \
-        --controller-image "$new_image"
+        --controller-image "$new_image" \
+        --refresh-runtime-templates
     env_set "$config_dir" PR0XTEUS_CONTROLLER_IMAGE "$new_image"
     export PR0XTEUS_CONTROLLER_IMAGE="$new_image"
     compose "$config_dir" up --detach
@@ -667,7 +673,8 @@ main() {
 		"$image" config init \
 		--config-dir /config \
 		--host-config-dir "$TARGET_CONFIG_DIR" \
-		--controller-image "$image"
+		--controller-image "$image" \
+		--refresh-runtime-templates
 
 	# config init preserves an existing .env, so re-pin the image line for the
 	# upgrade case where the .env already existed.

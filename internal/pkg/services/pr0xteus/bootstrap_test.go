@@ -102,6 +102,56 @@ func TestBootstrapConfigRefreshesExampleWithoutReplacingDotEnv(t *testing.T) {
 	assert.Contains(t, string(readBootstrapFixture(t, examplePath)), "PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:v9.9.9")
 }
 
+func TestBootstrapConfigRefreshesRuntimeTemplatesWithoutReplacingOperatorConfig(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	_, err := BootstrapConfig(BootstrapOptions{
+		ConfigDir:       configDir,
+		HostConfigDir:   configDir,
+		ControllerImage: defaultControllerImage,
+	})
+	require.NoError(t, err)
+
+	poolPath := filepath.Join(configDir, poolsRelativePath)
+	routingPath := filepath.Join(configDir, routingRelativePath)
+	envPath := filepath.Join(configDir, dotEnvFileName)
+	composePath := filepath.Join(configDir, composeFileName)
+	hostPortsPath := filepath.Join(configDir, hostPortsFileName)
+	noHostPortsPath := filepath.Join(configDir, noHostPortsFileName)
+	require.NoError(t, os.WriteFile(poolPath, []byte("operator-pool\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(routingPath, []byte("operator-routing\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(envPath, []byte("PR0XTEUS_API_TOKEN=keep-me\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(composePath, []byte("stale-compose\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(hostPortsPath, []byte("stale-host-ports\n"), bootstrapFileMode))
+	require.NoError(t, os.WriteFile(noHostPortsPath, []byte("stale-no-host-ports\n"), bootstrapFileMode))
+
+	result, err := BootstrapConfig(BootstrapOptions{
+		ConfigDir:               configDir,
+		HostConfigDir:           configDir,
+		ControllerImage:         "psyb0t/pr0xteus:v9.9.9",
+		RefreshRuntimeTemplates: true,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Created)
+	assert.Equal(
+		t,
+		[]string{
+			composePath,
+			hostPortsPath,
+			noHostPortsPath,
+			filepath.Join(configDir, dotEnvExampleFileName),
+		},
+		result.Refreshed,
+	)
+	assert.Equal(t, "operator-pool\n", string(readBootstrapFixture(t, poolPath)))
+	assert.Equal(t, "operator-routing\n", string(readBootstrapFixture(t, routingPath)))
+	assert.Equal(t, "PR0XTEUS_API_TOKEN=keep-me\n", string(readBootstrapFixture(t, envPath)))
+	assert.Equal(t, string(defaultComposeYAML), string(readBootstrapFixture(t, composePath)))
+	assert.Equal(t, string(defaultHostPortsComposeYAML), string(readBootstrapFixture(t, hostPortsPath)))
+	assert.Equal(t, string(defaultNoHostPortsComposeYAML), string(readBootstrapFixture(t, noHostPortsPath)))
+}
+
 func TestRootEnvExampleMatchesBootstrapTemplate(t *testing.T) {
 	t.Parallel()
 
