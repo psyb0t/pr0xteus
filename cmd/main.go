@@ -9,13 +9,15 @@ import (
 	"github.com/psyb0t/pr0xteus/internal/app"
 	servicemanager "github.com/psyb0t/pr0xteus/internal/pkg/service-manager"
 	"github.com/psyb0t/pr0xteus/internal/pkg/services"
-	pr0xteusservice "github.com/psyb0t/pr0xteus/internal/pkg/services/pr0xteus"
 	"github.com/psyb0t/pr0xteus/pkg/runner"
 	_ "github.com/psyb0t/slogging/slogconf"
 	"github.com/spf13/cobra"
 )
 
-// go build -ldflags "-X main.appName=userservice -X main.buildCommit=abc123 -X main.buildVersion=v1.2.3".
+//	go build -ldflags \
+//	  "-X main.appName=userservice \
+//	   -X main.buildCommit=abc123 \
+//	   -X main.buildVersion=v1.2.3".
 //
 //nolint:gochecknoglobals//need to be global bcuz ^.
 var (
@@ -32,7 +34,6 @@ const (
 
 func main() {
 	setProcessScope(appName, buildCommit, buildVersion)
-	pr0xteusservice.ConfigureCellImageVersion(buildVersion)
 	services.Init()
 
 	rootCmd := buildRootCommand()
