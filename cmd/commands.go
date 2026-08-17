@@ -32,29 +32,39 @@ func buildConfigInitCommand() *cobra.Command {
 		Short: "Create missing local configuration without overwriting operator files",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			result, err := pr0xteus.BootstrapConfig(options)
-			if err != nil {
-				return ctxerrors.Wrap(err, "initialize pr0xteus config")
-			}
-
-			for _, path := range result.Created {
-				command.Printf("created %s\n", path)
-			}
-
-			for _, path := range result.Preserved {
-				command.Printf("preserved %s\n", path)
-			}
-
-			for _, path := range result.Refreshed {
-				command.Printf("refreshed %s\n", path)
-			}
-
-			command.Println("add an authorized WireGuard .conf, update pools.yaml, then run config check")
-
-			return nil
+			return initializeConfig(command, options)
 		},
 	}
 
+	configureConfigInitFlags(command, &options)
+
+	return command
+}
+
+func initializeConfig(command *cobra.Command, options pr0xteus.BootstrapOptions) error {
+	result, err := pr0xteus.BootstrapConfig(options)
+	if err != nil {
+		return ctxerrors.Wrap(err, "initialize pr0xteus config")
+	}
+
+	for _, path := range result.Created {
+		command.Printf("created %s\n", path)
+	}
+
+	for _, path := range result.Preserved {
+		command.Printf("preserved %s\n", path)
+	}
+
+	for _, path := range result.Refreshed {
+		command.Printf("refreshed %s\n", path)
+	}
+
+	command.Println("add an authorized WireGuard .conf, update pools.yaml, then run config check")
+
+	return nil
+}
+
+func configureConfigInitFlags(command *cobra.Command, options *pr0xteus.BootstrapOptions) {
 	command.Flags().StringVar(
 		&options.ConfigDir,
 		"config-dir",
@@ -85,8 +95,6 @@ func buildConfigInitCommand() *cobra.Command {
 		false,
 		"refresh generated Docker Compose templates without changing operator config",
 	)
-
-	return command
 }
 
 func buildConfigCheckCommand() *cobra.Command {

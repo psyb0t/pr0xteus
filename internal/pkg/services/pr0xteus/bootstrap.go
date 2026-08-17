@@ -69,6 +69,13 @@ type BootstrapResult struct {
 	Refreshed []string
 }
 
+type bootstrapFile struct {
+	path         string
+	operatorPath string
+	data         []byte
+	runtime      bool
+}
+
 // ConfigCheckOptions defines the local configuration directory to validate.
 type ConfigCheckOptions struct {
 	ConfigDir string
@@ -152,14 +159,27 @@ func writeBootstrapFiles(
 	refreshRuntimeTemplates bool,
 	result *BootstrapResult,
 ) error {
-	type bootstrapFile struct {
-		path         string
-		operatorPath string
-		data         []byte
-		runtime      bool
+	for _, file := range bootstrapFiles(configDir, hostConfigDir) {
+		if err := writeBootstrapFile(file, refreshRuntimeTemplates, result); err != nil {
+			return err
+		}
 	}
 
-	files := []bootstrapFile{
+	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
+	if err := writeExampleFile(
+		examplePath,
+		[]byte(renderEnvExample(hostConfigDir, controllerImage, development)),
+	); err != nil {
+		return err
+	}
+
+	result.Refreshed = append(result.Refreshed, filepath.Join(hostConfigDir, dotEnvExampleFileName))
+
+	return nil
+}
+
+func bootstrapFiles(configDir string, hostConfigDir string) []bootstrapFile {
+	return []bootstrapFile{
 		{
 			path:         filepath.Join(configDir, poolsRelativePath),
 			operatorPath: filepath.Join(hostConfigDir, poolsRelativePath),
@@ -189,35 +209,25 @@ func writeBootstrapFiles(
 			runtime:      true,
 		},
 	}
+}
 
-	for _, file := range files {
-		if refreshRuntimeTemplates && file.runtime {
-			if err := writeRefreshedFile(file.path, file.data, bootstrapFileMode); err != nil {
-				return err
-			}
-
-			result.Refreshed = append(result.Refreshed, file.operatorPath)
-
-			continue
-		}
-
-		created, err := writeFileIfAbsent(file.path, file.data)
-		if err != nil {
+func writeBootstrapFile(file bootstrapFile, refreshRuntimeTemplates bool, result *BootstrapResult) error {
+	if refreshRuntimeTemplates && file.runtime {
+		if err := writeRefreshedFile(file.path, file.data, bootstrapFileMode); err != nil {
 			return err
 		}
 
-		result.add(file.operatorPath, created)
+		result.Refreshed = append(result.Refreshed, file.operatorPath)
+
+		return nil
 	}
 
-	examplePath := filepath.Join(configDir, dotEnvExampleFileName)
-	if err := writeExampleFile(
-		examplePath,
-		[]byte(renderEnvExample(hostConfigDir, controllerImage, development)),
-	); err != nil {
+	created, err := writeFileIfAbsent(file.path, file.data)
+	if err != nil {
 		return err
 	}
 
-	result.Refreshed = append(result.Refreshed, filepath.Join(hostConfigDir, dotEnvExampleFileName))
+	result.add(file.operatorPath, created)
 
 	return nil
 }

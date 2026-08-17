@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.2 — 2026-08-17
+
+- Fixed the release lint failure from v0.9.1. Configuration bootstrap and the
+  `config init` command are split into focused helpers without changing their
+  behavior.
+
 ## v0.9.1 — 2026-08-17
 
 - Fixed the installed command on owner-only configuration directories. `start`
