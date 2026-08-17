@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.5 — 2026-08-17
+
+- Fixed an intermittent end-to-end cell-proxy test failure. The test now waits
+  for the real control endpoint to observe completed SOCKS traffic before
+  asserting its metrics, matching the asynchronous connection lifecycle.
+
 ## v0.9.4 — 2026-08-17
 
 - Restored the controller startup hook that selects the exact release-paired

@@ -168,12 +168,31 @@ func TestServer_EndToEndProxiesAndRecords(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, "hello-through-cellproxy", string(body))
 
-	statusResp, err := http.Get("http://" + controlAddr + pathStatus)
-	require.NoError(t, err)
-
 	var status Status
-	require.NoError(t, json.NewDecoder(statusResp.Body).Decode(&status))
-	require.NoError(t, statusResp.Body.Close())
+	require.Eventually(t, func() bool {
+		statusResp, statusErr := http.Get("http://" + controlAddr + pathStatus)
+		if statusErr != nil {
+			return false
+		}
+
+		var candidate Status
+		decodeErr := json.NewDecoder(statusResp.Body).Decode(&candidate)
+		closeErr := statusResp.Body.Close()
+		if decodeErr != nil || closeErr != nil {
+			return false
+		}
+
+		if candidate.Traffic.Requests <= 0 ||
+			candidate.Traffic.BytesUp <= 0 ||
+			candidate.Traffic.BytesDown <= 0 ||
+			len(candidate.Traffic.Destinations) == 0 {
+			return false
+		}
+
+		status = candidate
+
+		return true
+	}, 3*time.Second, 50*time.Millisecond, "status should include completed SOCKS traffic")
 
 	assert.Equal(t, "cell-e2e", status.CellID)
 	assert.Positive(t, status.Traffic.Requests)
