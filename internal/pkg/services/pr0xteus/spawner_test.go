@@ -325,6 +325,30 @@ func TestCellSpawner_PullsCellImageBeforeCreatingContainer(t *testing.T) {
 	assert.Equal(t, []string{"created-cell"}, docker.started)
 }
 
+func TestCellSpawner_UsesLocalDevelopmentCellWithoutPull(t *testing.T) {
+	t.Parallel()
+
+	docker := &spawnerTestDockerClient{
+		createResult: mobyclient.ContainerCreateResult{ID: "created-cell"},
+	}
+	spawner := newSpawnerTestSubject(docker)
+	spawner.cfg.CellImage = cellImageForVersion(defaultCellTag)
+	spawner.pullImage = func(context.Context, string) error {
+		t.Fatal("local development cell image must not be pulled from a registry")
+
+		return nil
+	}
+
+	_, _, err := spawner.createAndStart(context.Background(), SpawnRequest{
+		Pool:      "western",
+		ConfName:  "de-berlin",
+		BundleDir: "/bundle",
+	})
+	require.NoError(t, err)
+	require.Len(t, docker.createOptions, 1)
+	assert.Equal(t, []string{"created-cell"}, docker.started)
+}
+
 func TestCellSpawner_RejectsAllocationWhenCellImagePullFails(t *testing.T) {
 	t.Parallel()
 

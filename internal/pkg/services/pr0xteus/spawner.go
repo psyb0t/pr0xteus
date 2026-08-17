@@ -230,12 +230,16 @@ func (s *CellSpawner) createAndStart(
 	containerName := buildContainerName(req.Pool, req.ConfName, s.nowFn())
 	confPath := filepath.Join(req.BundleDir, req.ConfName+".conf")
 
-	ctxscope.GetLogger(ctx).Info("pulling cell image", "image", s.cfg.CellImage)
+	if s.cfg.CellImage == cellImageForVersion(defaultCellTag) {
+		ctxscope.GetLogger(ctx).Debug("using local development cell image", "image", s.cfg.CellImage)
+	} else {
+		ctxscope.GetLogger(ctx).Info("pulling cell image", "image", s.cfg.CellImage)
 
-	if err := s.pullImage(ctx, s.cfg.CellImage); err != nil {
-		return "", "", ctxerrors.Wrapf(
-			ErrSpawnFailed, "pull cell image %s: %s", s.cfg.CellImage, err.Error(),
-		)
+		if err := s.pullImage(ctx, s.cfg.CellImage); err != nil {
+			return "", "", ctxerrors.Wrapf(
+				ErrSpawnFailed, "pull cell image %s: %s", s.cfg.CellImage, err.Error(),
+			)
+		}
 	}
 
 	createResp, err := s.docker.ContainerCreate(

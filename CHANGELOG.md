@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.2 — 2026-08-17
+
+- Fixed local development and real-infrastructure tests: the locally built
+  `:cell-dev` worker is now used as-is. Released controllers still pull their
+  exact paired `:cell-vX.Y.Z` worker before allocating a tunnel.
+
 ## v0.8.1 — 2026-08-17
 
 - Restored the Servicepack quality-target contract: removed the stale root
