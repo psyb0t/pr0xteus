@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.4 — 2026-08-17
+
+- Restored the controller startup hook that selects the exact release-paired
+  cell image from its build version. A versioned controller again uses its
+  matching `:cell-vX.Y.Z` image instead of leaving the cell selection unset.
+- Updated to Servicepack v1.6.4. pr0xteus now uses the framework's shared
+  Docker-in-Docker test runner instead of maintaining a duplicate one, while
+  retaining the project-specific real-egress test variables. This fixes the
+  same Make targets across a host, a container with the Docker socket, and CI.
+
 ## v0.9.3 — 2026-08-17
 
 - Restored the 90% coverage gate after the v0.9.2 bootstrap helper split. The
