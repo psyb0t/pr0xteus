@@ -481,7 +481,10 @@ wire_tailscale_serve() {
 
     say "waiting for Tailscale to authenticate"
     for ((attempt = 1; attempt <= TAILSCALE_READY_ATTEMPTS; attempt++)); do
-        if compose "$config_dir" exec -T tailscale tailscale status --json >/dev/null; then
+        # `tailscale status --json` exits successfully while logged out. Wait
+        # for the actual running backend before attempting Serve.
+        if compose "$config_dir" exec -T tailscale tailscale status --json 2>/dev/null |
+            awk '/"BackendState": "Running"/ { running = 1 } END { exit !running }'; then
             if compose "$config_dir" exec -T tailscale \
                 tailscale serve --bg --http=80 http://pr0xteus:8000; then
                 say "Tailscale Serve is routing tailnet HTTP to pr0xteus"

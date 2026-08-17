@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.7 — 2026-08-17
+
+- Fixed a Tailscale startup race in the installed wrapper. `pr0xteus start`
+  now waits for the sidecar backend to reach `Running` before configuring
+  Tailscale Serve, instead of mistaking a logged-out JSON status for readiness.
+
 ## v0.9.6 — 2026-08-17
 
 - Fixed installed controller startup with the default owner-only config
