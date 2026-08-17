@@ -44,6 +44,7 @@ func buildConfigInitCommand() *cobra.Command {
 			for _, path := range result.Preserved {
 				command.Printf("preserved %s\n", path)
 			}
+
 			for _, path := range result.Refreshed {
 				command.Printf("refreshed %s\n", path)
 			}

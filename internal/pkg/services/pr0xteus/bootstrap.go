@@ -339,13 +339,8 @@ func writeFileIfAbsent(path string, contents []byte) (bool, error) {
 }
 
 func writeExampleFile(path string, contents []byte) error {
-	info, err := os.Lstat(path)
-	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
-		return ctxerrors.Wrapf(ErrConfigInvalid, "config path %q must be a regular file", path)
-	}
-
-	if err != nil && !os.IsNotExist(err) {
-		return ctxerrors.Wrap(err, "stat config example")
+	if err := validateExamplePath(path); err != nil {
+		return err
 	}
 
 	temporaryFile, err := os.CreateTemp(filepath.Dir(path), ".env.example-*")
@@ -354,6 +349,7 @@ func writeExampleFile(path string, contents []byte) error {
 	}
 
 	temporaryPath := temporaryFile.Name()
+
 	defer func() {
 		_ = os.Remove(temporaryPath) // best-effort cleanup after a failed replacement.
 	}()
@@ -376,6 +372,23 @@ func writeExampleFile(path string, contents []byte) error {
 
 	if err := os.Rename(temporaryPath, path); err != nil {
 		return ctxerrors.Wrap(err, "replace config example")
+	}
+
+	return nil
+}
+
+func validateExamplePath(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	if err != nil {
+		return ctxerrors.Wrap(err, "stat config example")
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return ctxerrors.Wrapf(ErrConfigInvalid, "config path %q must be a regular file", path)
 	}
 
 	return nil

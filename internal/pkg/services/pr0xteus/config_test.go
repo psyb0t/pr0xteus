@@ -132,7 +132,9 @@ func TestLoadConfig_Validation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			configureValidEnvironment(t)
-			tc.configure(t)
+			if tc.configure != nil {
+				tc.configure(t)
+			}
 
 			cfg, err := LoadConfig()
 			if tc.wantErr != nil {

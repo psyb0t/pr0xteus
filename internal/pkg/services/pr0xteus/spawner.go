@@ -229,6 +229,7 @@ func (s *CellSpawner) createAndStart(
 ) (string, string, error) {
 	containerName := buildContainerName(req.Pool, req.ConfName, s.nowFn())
 	confPath := filepath.Join(req.BundleDir, req.ConfName+".conf")
+
 	ctxscope.GetLogger(ctx).Info("pulling cell image", "image", s.cfg.CellImage)
 
 	if err := s.pullImage(ctx, s.cfg.CellImage); err != nil {
@@ -524,22 +525,8 @@ func (s *CellSpawner) waitReady(
 		case <-ticker.C:
 		}
 
-		addr, err := s.resolveSocksAddr(ctx, containerID, containerName)
-		if err != nil {
-			continue
-		}
-
-		if addr == "" {
-			continue
-		}
-
-		ready, err := s.probeCellReady(ctx, containerID, addr)
-		if err != nil || !ready {
-			continue
-		}
-
-		gatewayAddr, err := s.resolveGatewayAddr(ctx, containerID, addr)
-		if err != nil || gatewayAddr == "" {
+		addr, gatewayAddr, ready := s.readyGateway(ctx, containerID, containerName)
+		if !ready {
 			continue
 		}
 
@@ -568,6 +555,28 @@ func (s *CellSpawner) waitReady(
 			LastUsedAt:  now,
 		}, nil
 	}
+}
+
+func (s *CellSpawner) readyGateway(
+	ctx context.Context,
+	containerID, containerName string,
+) (string, string, bool) {
+	addr, err := s.resolveSocksAddr(ctx, containerID, containerName)
+	if err != nil || addr == "" {
+		return "", "", false
+	}
+
+	ready, err := s.probeCellReady(ctx, containerID, addr)
+	if err != nil || !ready {
+		return "", "", false
+	}
+
+	gatewayAddr, err := s.resolveGatewayAddr(ctx, containerID, addr)
+	if err != nil || gatewayAddr == "" {
+		return "", "", false
+	}
+
+	return addr, gatewayAddr, true
 }
 
 // resolveGatewayAddr returns the private cell SOCKS5 endpoint reachable by the

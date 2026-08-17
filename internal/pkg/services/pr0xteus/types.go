@@ -168,17 +168,19 @@ type ProxyResponse struct {
 // LastURL is the latest issued lease for that tunnel; it expires at
 // LastURLExpiresAt and is omitted until a caller first allocates the tunnel.
 type ProxyView struct {
-	Pool             string      `json:"pool"`
-	ConfName         string      `json:"confName"`
-	State            TunnelState `json:"state"`
-	ExitCountry      string      `json:"exitCountry"`
-	ExitIP           string      `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism
-	SpawnedAt        time.Time   `json:"spawnedAt"`
-	HealthyAt        time.Time   `json:"healthyAt,omitzero"`
-	LastUsedAt       time.Time   `json:"lastUsedAt,omitzero"`
-	LastURL          string      `json:"lastURL,omitempty"`
-	LastURLExpiresAt time.Time   `json:"lastURLExpiresAt,omitzero"`
-	IdleSeconds      float64     `json:"idleSeconds"`
+	Pool        string      `json:"pool"`
+	ConfName    string      `json:"confName"`
+	State       TunnelState `json:"state"`
+	ExitCountry string      `json:"exitCountry"`
+	ExitIP      string      `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism
+	SpawnedAt   time.Time   `json:"spawnedAt"`
+	HealthyAt   time.Time   `json:"healthyAt,omitzero"`
+	LastUsedAt  time.Time   `json:"lastUsedAt,omitzero"`
+	//nolint:tagliatelle // API contract preserves the URL initialism.
+	LastURL string `json:"lastURL,omitempty"`
+	//nolint:tagliatelle // API contract preserves the URL initialism.
+	LastURLExpiresAt time.Time `json:"lastURLExpiresAt,omitzero"`
+	IdleSeconds      float64   `json:"idleSeconds"`
 }
 
 // ProxyListResponse is the bounded active-proxy collection returned by

@@ -671,26 +671,7 @@ func (m *Manager) spawnFromState(
 		BundleDir:   m.cfg.BundleDir,
 	})
 	if spawnErr != nil {
-		outcome := metricOutcomeSpawnFail
-		if errors.Is(spawnErr, ErrSpawnTimeout) {
-			outcome = metricOutcomeTimeout
-		}
-
-		TunnelSpawnsTotal.WithLabelValues(state.Spec.Name, outcome).Inc()
-
-		state.markFailed(conf, time.Now())
-		ctxscope.GetLogger(ctx).Warn(
-			"pool cell spawn failed",
-			"pool", state.Spec.Name,
-			"config", conf,
-			"err", spawnErr,
-		)
-
-		return Acquisition{}, ctxerrors.Wrapf(
-			ErrPoolUnavailable,
-			"spawn pool %q conf %q: %s",
-			state.Spec.Name, conf, spawnErr.Error(),
-		)
+		return Acquisition{}, m.recordSpawnFailure(ctx, state, conf, spawnErr)
 	}
 
 	TunnelSpawnsTotal.WithLabelValues(state.Spec.Name, metricOutcomeSuccess).Inc()
@@ -698,10 +679,12 @@ func (m *Manager) spawnFromState(
 		Observe(time.Since(spawnStart).Seconds())
 
 	tunnel.Pool = state.Spec.Name
+
 	tunnel.State = TunnelStateHot
 	if tunnel.GatewayAddr == "" && tunnel.ProxyURL != nil {
 		tunnel.GatewayAddr = tunnel.ProxyURL.Host
 	}
+
 	tunnel.InFlight = 1
 	tunnel.LastUsedAt = time.Now()
 
@@ -715,6 +698,34 @@ func (m *Manager) spawnFromState(
 		Tunnel: &tunnelCopy,
 		Pool:   state.Spec.Name,
 	}, nil
+}
+
+func (m *Manager) recordSpawnFailure(
+	ctx context.Context,
+	state *PoolState,
+	conf string,
+	spawnErr error,
+) error {
+	outcome := metricOutcomeSpawnFail
+	if errors.Is(spawnErr, ErrSpawnTimeout) {
+		outcome = metricOutcomeTimeout
+	}
+
+	TunnelSpawnsTotal.WithLabelValues(state.Spec.Name, outcome).Inc()
+	state.markFailed(conf, time.Now())
+
+	ctxscope.GetLogger(ctx).Warn(
+		"pool cell spawn failed",
+		"pool", state.Spec.Name,
+		"config", conf,
+		"err", spawnErr,
+	)
+
+	return ctxerrors.Wrapf(
+		ErrPoolUnavailable,
+		"spawn pool %q conf %q: %s",
+		state.Spec.Name, conf, spawnErr.Error(),
+	)
 }
 
 // excludeConfsFor builds a conf-exclusion set from an excluded
@@ -779,6 +790,7 @@ func (m *Manager) ResolveExcludedProxy(raw string) (*url.URL, error) {
 	}
 
 	username := proxyURL.User.Username()
+
 	password, ok := proxyURL.User.Password()
 	if !ok {
 		return nil, ctxerrors.Wrap(ErrInvalidCountry, "excluded controller proxy lacks password")

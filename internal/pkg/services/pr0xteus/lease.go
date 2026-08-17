@@ -99,6 +99,7 @@ func (r *leaseRegistry) Lookup(leaseID, secret string) (proxyLeaseRecord, bool) 
 	defer r.mu.Unlock()
 
 	r.pruneExpiredLocked(now)
+
 	record, ok := r.leases[leaseID]
 	if !ok || subtle.ConstantTimeCompare(record.SecretDigest[:], providedDigest[:]) != 1 {
 		return proxyLeaseRecord{}, false
@@ -120,7 +121,7 @@ func (r *leaseRegistry) pruneExpiredLocked(now time.Time) {
 func newLeasePart() (string, error) {
 	bytes := make([]byte, proxyLeaseSecretBytes)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+		return "", ctxerrors.Wrap(err, "generate lease secret")
 	}
 
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
@@ -131,7 +132,7 @@ func cloneProxyURL(value *url.URL) *url.URL {
 		return nil
 	}
 
-	copy := *value
+	copied := *value
 
-	return &copy
+	return &copied
 }

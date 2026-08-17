@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/psyb0t/aichteeteapee"
+	"github.com/psyb0t/ctxerrors"
 	"github.com/psyb0t/ctxscope"
 )
 
@@ -343,7 +344,7 @@ func boundedQueryInt(r *http.Request, name string, defaultValue, maximum int) (i
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 0 || maximum > 0 && value > maximum ||
 		name == "limit" && value == 0 {
-		return 0, errors.New("invalid pagination value")
+		return 0, ctxerrors.New("invalid pagination value")
 	}
 
 	return value, nil

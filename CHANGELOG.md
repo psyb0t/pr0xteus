@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.8.1 — 2026-08-17
+
+- Restored the Servicepack quality-target contract: removed the stale root
+  recipes that Make was already overriding, so linting, testing, formatting,
+  and image builds all use the framework implementation.
+- The documented Servicepack coverage hook now builds the local cell image
+  first, then delegates to the framework coverage runner. This keeps the real
+  cell integration precondition without maintaining a second test workflow.
+- Fixed the lint findings in the controller error paths, pool startup helpers,
+  config validation test, and public proxy field tags.
+
 ## v0.8.0 — 2026-08-17
 
 **Breaking before 1.0:** cells are now release-paired to their controller.

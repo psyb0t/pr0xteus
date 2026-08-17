@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/psyb0t/ctxerrors"
+	"github.com/psyb0t/ctxscope"
 	thingsocks5 "github.com/things-go/go-socks5"
 	"golang.org/x/net/proxy"
 )
@@ -31,7 +33,7 @@ func NewProxyGateway(manager *Manager, listenAddr string) *ProxyGateway {
 func (g *ProxyGateway) Start(ctx context.Context, errorsOut chan<- error) error {
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", g.listenAddr)
 	if err != nil {
-		return err
+		return ctxerrors.Wrap(err, "listen for controller SOCKS5 gateway")
 	}
 
 	g.mu.Lock()
@@ -47,13 +49,16 @@ func (g *ProxyGateway) Start(ctx context.Context, errorsOut chan<- error) error 
 
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
-			errorsOut <- err
+			errorsOut <- ctxerrors.Wrap(err, "serve controller SOCKS5 gateway")
 		}
 	}()
 
 	go func() {
 		<-ctx.Done()
-		_ = g.Close()
+
+		if err := g.Close(); err != nil {
+			ctxscope.GetLogger(ctx).Warn("close controller SOCKS5 gateway", "err", err)
+		}
 	}()
 
 	return nil
@@ -69,7 +74,11 @@ func (g *ProxyGateway) Close() error {
 		return nil
 	}
 
-	return listener.Close()
+	if err := listener.Close(); err != nil {
+		return ctxerrors.Wrap(err, "close controller SOCKS5 gateway")
+	}
+
+	return nil
 }
 
 func (g *ProxyGateway) dial(
@@ -79,14 +88,15 @@ func (g *ProxyGateway) dial(
 	request *thingsocks5.Request,
 ) (net.Conn, error) {
 	if request.AuthContext == nil {
-		return nil, errors.New("missing proxy lease authentication")
+		return nil, ctxerrors.New("missing proxy lease authentication")
 	}
 
 	username := request.AuthContext.Payload["username"]
 	password := request.AuthContext.Payload["password"]
+
 	acquisition, err := g.manager.AcquireForLease(username, password)
 	if err != nil {
-		return nil, err
+		return nil, ctxerrors.Wrap(err, "acquire cell for proxy lease")
 	}
 
 	dialContext, cancel := context.WithTimeout(ctx, proxyGatewayDialTimeout)
@@ -101,21 +111,21 @@ func (g *ProxyGateway) dial(
 	if err != nil {
 		g.manager.Release(acquisition)
 
-		return nil, err
+		return nil, ctxerrors.Wrap(err, "create cell SOCKS5 dialer")
 	}
 
 	contextDialer, ok := upstream.(proxy.ContextDialer)
 	if !ok {
 		g.manager.Release(acquisition)
 
-		return nil, errors.New("cell SOCKS5 dialer lacks context support")
+		return nil, ctxerrors.New("cell SOCKS5 dialer lacks context support")
 	}
 
 	connection, err := contextDialer.DialContext(dialContext, network, address)
 	if err != nil {
 		g.manager.Release(acquisition)
 
-		return nil, err
+		return nil, ctxerrors.Wrap(err, "dial destination through cell SOCKS5 proxy")
 	}
 
 	return &releaseConn{Conn: connection, release: func() { g.manager.Release(acquisition) }}, nil
@@ -150,5 +160,9 @@ func (c *releaseConn) Close() error {
 	err := c.Conn.Close()
 	c.once.Do(c.release)
 
-	return err
+	if err != nil {
+		return ctxerrors.Wrap(err, "close cell proxy connection")
+	}
+
+	return nil
 }
