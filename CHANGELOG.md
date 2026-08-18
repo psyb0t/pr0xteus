@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.10.1 — 2026-08-18
+
+- Fixed `pr0xteus upgrade` with the optional Tailscale profile. Upgrade now
+  restores the API, metrics, and SOCKS Serve routes after recreating the
+  sidecar, then refreshes the public SOCKS address before reporting success.
+
 ## v0.10.0 — 2026-08-18
 
 - Made local development use the same installer-generated configuration and

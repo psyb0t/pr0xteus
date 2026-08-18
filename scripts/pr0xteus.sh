@@ -401,6 +401,7 @@ upgrade() {
 		env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
 		export PR0XTEUS_CONTROLLER_IMAGE="$ROLLING_IMAGE"
 		compose "$config_dir" up --detach
+		wire_tailscale_serve "$config_dir"
 		compose "$config_dir" ps
 
 		return
@@ -426,6 +427,7 @@ upgrade() {
 	env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
 	export PR0XTEUS_CONTROLLER_IMAGE="$new_image"
 	compose "$config_dir" up --detach
+	wire_tailscale_serve "$config_dir"
 	compose "$config_dir" ps
 
 	# Refresh the wrapper itself from the new installer (self-update), re-running
