@@ -128,6 +128,7 @@ services:
     cap_drop: [ALL]
     # Kernel-mode Tailscale needs exactly these capabilities and /dev/net/tun.
     cap_add:
+      - DAC_OVERRIDE
       - NET_ADMIN
       - NET_RAW
     security_opt:
@@ -169,6 +170,44 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Dynamic cells join egress after Compose has started. Keep one inert,
+  # isolated member on that network so Compose creates the named network first.
+  # Neither the controller nor the socket proxy can reach this network.
+  egress-network-anchor:
+    image: alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+    user: "65534:65534"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,noexec,nosuid,size=8m
+    mem_limit: 16m
+    cpus: 0.05
+    pids_limit: 16
+    deploy:
+      resources:
+        limits:
+          memory: 16M
+          cpus: "0.05"
+          pids: 16
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      - egress
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     logging:
       driver: json-file
       options:

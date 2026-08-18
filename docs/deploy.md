@@ -75,11 +75,15 @@ TS_EXTRA_ARGS=--accept-dns=false
 ```
 
 `pr0xteus start` enables the Compose `tailscale` profile, gives the sidecar its
-own tailnet identity, and wires Tailscale Serve to `http://pr0xteus:8000` over
-the private Docker control network. The no-host-ports Compose override removes
-all three controller port publications; the tailnet URL is
-`http://pr0xteus/v1/...` when MagicDNS names the node `pr0xteus`. Tailscale
-encrypts that path; the bearer token is still required for API calls.
+own tailnet identity, and wires Tailscale Serve to the private controller over
+the Docker `control` network: HTTP on port 80 goes to `pr0xteus:8000`, TCP port
+9091 goes to the private metrics listener, and TCP port 1080 goes to the
+controller SOCKS gateway. The no-host-ports Compose
+override removes all three controller port publications. When MagicDNS names
+the node `pr0xteus`, use `http://pr0xteus/v1/...` for the API and the returned
+lease URL targets `pr0xteus:1080`. Tailscale encrypts both paths; the bearer
+token is still required for API calls and the lease credentials are still
+required for SOCKS.
 
 For a direct Compose deployment, use the same generated config and wire Serve
 after the sidecar has joined:
@@ -98,7 +102,25 @@ docker compose --profile tailscale \
   -f "$HOME/.config/pr0xteus/docker-compose.yml" \
   -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
   exec -T tailscale tailscale serve --bg --http=80 http://pr0xteus:8000
+
+docker compose --profile tailscale \
+  --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
+  -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
+  exec -T tailscale tailscale serve --bg --tcp=9091 tcp://pr0xteus:9091
+
+docker compose --profile tailscale \
+  --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
+  -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
+  exec -T tailscale tailscale serve --bg --tcp=1080 tcp://pr0xteus:1080
 ```
+
+For direct Compose, set `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` to the sidecar's
+MagicDNS host plus `:1080`, then recreate `pr0xteus` so future leases use that
+reachable address. The `pr0xteus` wrapper performs those two steps itself.
 
 The sidecar never publishes a host port and does not reuse a Tailscale client
 running on the host. Its persistent state is
@@ -107,6 +129,8 @@ not consume the auth key again. For Headscale, set
 `TS_EXTRA_ARGS=--accept-dns=false --login-server=https://headscale.example`.
 The sidecar needs `/dev/net/tun`, `NET_ADMIN`, and `NET_RAW` to create its own
 kernel-mode tunnel; no other Pr0xteus service receives those privileges.
+Keep tailnet access to port 9091 restricted because its health and Prometheus
+endpoints are deliberately unauthenticated.
 
 Leave `PR0XTEUS_DISABLE_HOST_PORTS=false` for the default loopback deployment.
 While it is false, the `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT`
@@ -130,10 +154,10 @@ unset token
 The returned `socks5://...` URL is a short-lived controller SOCKS gateway
 lease and works from the host or another trusted client that can reach the
 gateway. The controller forwards it to the selected cell through the internal
-cell-control network; it is intentionally not host-reachable when host ports
-are disabled. In Tailscale-only mode, make the equivalent authenticated API
-call through the sidecar's MagicDNS name instead. Do not publish a cell port or
-expose the controller API beyond an authenticated private boundary.
+cell-control network. In Tailscale-only mode, the wrapper returns a lease URL
+with the sidecar's MagicDNS host on port 1080, so make the authenticated API
+call and use the lease from another tailnet machine. Do not publish a cell port
+or expose the controller API beyond an authenticated private boundary.
 
 ## Operations
 

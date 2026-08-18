@@ -101,6 +101,18 @@ if service_has_network docker-socket-proxy egress; then
 	exit 1
 fi
 
+if ! service_has_network egress-network-anchor egress; then
+	log ERROR "egress anchor must create the named network required by dynamic cells"
+	exit 1
+fi
+
+if service_has_network egress-network-anchor control ||
+	service_has_network egress-network-anchor cell-control ||
+	service_has_network egress-network-anchor tailnet; then
+	log ERROR "egress anchor must remain isolated from controller and Tailnet networks"
+	exit 1
+fi
+
 if ! service_has_network tailscale control || ! service_has_network tailscale tailnet; then
 	log ERROR "Tailscale must bridge only the control and tailnet networks"
 	exit 1

@@ -21,6 +21,7 @@ coverage-percent.txt
 profile.out
 .backup
 .cover/
+.config/
 htmlcov/
 bin/
 dist/

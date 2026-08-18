@@ -105,13 +105,16 @@ TS_HOSTNAME=pr0xteus
 pr0xteus start
 ```
 
-The optional sidecar gets its own tailnet identity and proxies
-`http://pr0xteus/v1/...` to the controller through Tailscale Serve. This makes
-the hop entirely internal to Docker: the controller, metrics, and SOCKS ports
-are not bound on the host. The bearer token below is still required. Its
-identity survives restarts in `~/.config/pr0xteus/tailscale/state`. Use the
-tailnet URL for API calls in this mode; the loopback examples below apply to
-the default `PR0XTEUS_DISABLE_HOST_PORTS=false` deployment.
+The optional sidecar gets its own tailnet identity and serves the controller
+API on port 80, private metrics on port 9091, and the controller SOCKS gateway
+on port 1080 through Tailscale Serve. This makes the hop entirely internal to
+Docker: the controller, metrics, and SOCKS ports are not bound on the host. The bearer token below is still
+required. Its identity survives restarts in `~/.config/pr0xteus/tailscale/state`.
+Use the tailnet URL for API calls in this mode; the wrapper also returns a
+SOCKS URL using that MagicDNS host. The loopback examples below apply to the
+default `PR0XTEUS_DISABLE_HOST_PORTS=false` deployment.
+Keep tailnet access to port 9091 restricted because its health and Prometheus
+endpoints do not require authentication.
 
 ## 4. Allocate one configured exit
 
@@ -145,12 +148,14 @@ The response has this shape:
 }
 ```
 
-That URL targets the controller's loopback SOCKS gateway. It is usable from the
-host shell or any trusted client that can reach that listener; the controller
-validates its lease credentials, forwards bytes to the selected cell over the
-internal control network, and the cell resolves and egresses through WireGuard.
-When `PR0XTEUS_DISABLE_HOST_PORTS=true`, this host-side SOCKS URL is not
-available; that mode is for an internal gateway such as the Tailscale sidecar.
+That URL targets the controller SOCKS gateway. In the default deployment it
+uses the loopback listener, so it is usable from the host shell or another
+trusted client that can reach that listener. With
+`PR0XTEUS_DISABLE_HOST_PORTS=true` and the wrapper-managed Tailscale profile,
+the returned URL instead uses the sidecar's MagicDNS host on port 1080 and is
+usable from another tailnet machine. In both cases the controller validates the
+lease credentials, forwards bytes to the selected cell over the internal
+control network, and the cell resolves and egresses through WireGuard.
 
 ## 5. Prove traffic uses the WireGuard exit
 
@@ -179,7 +184,9 @@ make test
 make lint
 ```
 
-`make config-init` and `make run` are development conveniences. `make run` uses
-`docker-compose.yml` plus `docker-compose.dev.yml`; `make config-init` just runs
-the image's `config init` once (no Compose). Production operators use the
-installer and `pr0xteus` command above.
+`make config-init` and `make run` exercise the production lifecycle with local
+images. They run the actual installer in development mode, which writes ignored
+`.config/pr0xteus/` and installs the wrapper there. Make invokes that installed
+wrapper with the local config directory. The lifecycle and `.env` switches are
+the same as an installed stack; only its `:dev` image pin and pull policy differ.
+Production operators use the installer and `pr0xteus` command above.

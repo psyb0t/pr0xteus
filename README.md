@@ -171,14 +171,19 @@ TS_EXTRA_ARGS=--accept-dns=false  # extra `tailscale up` flags (see below)
 ```
 
 That starts an optional sidecar in its own network namespace, waits for it to
-join your tailnet, and configures Tailscale Serve to proxy
-`http://pr0xteus/v1/...` to the private controller. With
+join your tailnet, then serves the authenticated HTTP API on port 80, the
+private metrics listener on port 9091, and the lease-authenticated SOCKS
+gateway on port 1080. With
 `PR0XTEUS_DISABLE_HOST_PORTS=true`, the controller, metrics, and SOCKS gateway
 have no host binding at all: the sidecar reaches the controller only through
 the internal Docker `control` network. It does not touch a host Tailscale
-client, and the tailnet API still requires the bearer token. The sidecar's
-tailnet state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps the
-same identity across restarts.
+client, and the tailnet API still requires the bearer token. Keep tailnet
+access to port 9091 restricted because `/healthz` and `/metrics` are not
+authenticated. The wrapper
+derives `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` from the node's MagicDNS name, so a
+lease URL works directly from another tailnet machine. The sidecar's tailnet
+state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps the same
+identity across restarts.
 
 For the normal host-local path, leave `PR0XTEUS_DISABLE_HOST_PORTS=false` (the
 default). The `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT` mappings
@@ -460,13 +465,14 @@ make format        # gofumpt + shfmt
 make lint          # Go, shell, and format checks
 make test          # unit tests plus a real Testcontainers WireGuard/SOCKS5 stack
 make test-api      # build pr0xteus from its Dockerfile in Testcontainers, hit every route
-make test-real     # opt-in real Surfshark allocation and public-IP egress proof
+make test-real     # opt-in real provider allocation and public-IP egress proof
 make test-coverage # gate every package at 90% (servicepack coverage engine)
 make audit         # govulncheck
 make audit-compose # Compose safety checks
 make build         # static controller binary (./build)
 make docker-build  # hardened production controller image
 make build-cell    # WireGuard + cellproxy image
+make run           # local images through the real installer and installed wrapper
 ```
 
 `make test-api` (and the broader `make test-integration`) use Testcontainers to
@@ -488,7 +494,7 @@ It excludes only non-hand-written code under test: `cmd/` mains, the `tests/`
 harness, generated code, and mocks.
 
 `make test-real` is deliberately separate from `make test` and CI. It loads
-the ignored local Surfshark bundle at `secrets/wg/surfshark-wireguard/` with
+the ignored local provider bundle at `secrets/wg/provider-wireguard/` with
 the matching `secrets/wg/pools.yaml` and `config/egress-routing.yaml`, starts
 its own Testcontainers controller and consumer, requests a real egress proxy,
 then verifies that the consumer's public IPv4 address changes when traffic
@@ -511,7 +517,8 @@ re-implementing the HTTP contract.
 - Optional tailnet access is a separate, capability-minimized Tailscale
   sidecar. It is the only service with `/dev/net/tun`, `NET_ADMIN`, and
   `NET_RAW`; it has its own tailnet identity and exposes only the authenticated
-  controller API through Tailscale Serve.
+  controller API plus the lease-authenticated controller SOCKS gateway through
+  Tailscale Serve.
 - A cell has the specific WireGuard exception: `NET_ADMIN` and `/dev/net/tun`,
   plus `SETUID`/`SETGID` solely for its one-way final drop to the non-root
   cellproxy account. It begins with default-drop firewall policy, allows the

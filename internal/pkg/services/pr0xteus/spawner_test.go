@@ -115,6 +115,7 @@ func TestCellSpawner_BuildHostConfigForPrivateNetwork(t *testing.T) {
 		t,
 		[]string{
 			cellCapabilityNetAdmin,
+			cellCapabilityReadHost,
 			cellCapabilitySetGID,
 			cellCapabilitySetUID,
 		},

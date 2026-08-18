@@ -5,6 +5,7 @@ RUN apk add --no-cache \
 		bash=5.3.9-r1 \
 		build-base=0.5-r4 \
 		ca-certificates=20260611-r0 \
+		curl=8.21.0-r0 \
 		docker-cli=29.5.3-r0 \
 		docker-cli-compose=5.1.4-r0 \
 		git=2.54.0-r0 \

@@ -30,9 +30,9 @@ const (
 	realDefaultCountry = "US"
 	publicIPEndpoint   = "https://api.ipify.org"
 
-	surfsharkBundlePath = "secrets/wg/surfshark-wireguard"
-	surfsharkPoolsPath  = "secrets/wg/pools.yaml"
-	routingPath         = "config/egress-routing.yaml"
+	providerBundlePath = "secrets/wg/provider-wireguard"
+	providerPoolsPath  = "secrets/wg/pools.yaml"
+	routingPath        = "config/egress-routing.yaml"
 )
 
 var (
@@ -44,20 +44,20 @@ func TestMain(m *testing.M) {
 	if os.Getenv(realTestEnabledEnv) != "true" {
 		_, _ = fmt.Fprintln(
 			os.Stderr,
-			"real Surfshark test requires PR0XTEUS_REAL_TEST_ENABLED=true",
+			"real external-provider test requires PR0XTEUS_REAL_TEST_ENABLED=true",
 		)
 		os.Exit(1)
 	}
 
 	country, err := realCountryFromEnvironment()
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "real Surfshark test setup failed:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "real external-provider test setup failed:", err)
 		os.Exit(1)
 	}
 
 	root, err := repositoryRoot()
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "real Surfshark test setup failed:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "real external-provider test setup failed:", err)
 		os.Exit(1)
 	}
 
@@ -67,14 +67,14 @@ func TestMain(m *testing.M) {
 	createdInfra, err := testinfra.Setup(
 		setupCtx,
 		testinfra.WithExternalProvider(testinfra.ExternalProviderConfig{
-			BundleDir:   filepath.Join(root, surfsharkBundlePath),
-			PoolsFile:   filepath.Join(root, surfsharkPoolsPath),
+			BundleDir:   filepath.Join(root, providerBundlePath),
+			PoolsFile:   filepath.Join(root, providerPoolsPath),
 			RoutingFile: filepath.Join(root, routingPath),
 		}),
 	)
 	setupCancel()
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "real Surfshark test setup failed:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "real external-provider test setup failed:", err)
 		os.Exit(1)
 	}
 
@@ -86,7 +86,7 @@ func TestMain(m *testing.M) {
 		context.Background(), realTeardownTimeout,
 	)
 	if err := realInfra.Teardown(teardownCtx); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "real Surfshark test teardown failed:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "real external-provider test teardown failed:", err)
 		code = 1
 	}
 	teardownCancel()
@@ -94,7 +94,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestRealSurfshark_ChangesPublicEgressIP(t *testing.T) {
+func TestRealExternalProvider_ChangesPublicEgressIP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), realRequestTimeout)
 	t.Cleanup(cancel)
 

@@ -196,4 +196,5 @@ The service uses the project-standard JSON error envelope. Expect:
 
 `GET /healthz` and `GET /metrics` live on the separate metrics listener
 (default `:9091`), not under `/v1`, and are intentionally not authenticated.
-Keep that listener private.
+Keep that listener private. With the optional Tailscale profile, the wrapper
+routes tailnet TCP port 9091 to this listener without publishing a host port.

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.10.0 — 2026-08-18
+
+- Made local development use the same installer-generated configuration and
+  installed wrapper lifecycle as production, while building and retaining the
+  local `:dev` controller and `:cell-dev` images.
+- Added an installed-stack smoke test that exercises every API route and proves
+  real SOCKS egress changes the public IP.
+- Completed the optional Tailscale path: API, metrics, and lease-authenticated
+  SOCKS traffic are served through the sidecar without host port bindings, and
+  disabling the profile now tears the sidecar down cleanly.
+- Fixed startup with owner-only WireGuard configuration and Tailscale state,
+  kept the dynamic-cell egress network alive, and excluded local `.config/`
+  state from Git and Docker build contexts.
+- Renamed the opt-in real-provider test and paths so public source does not
+  disclose which provider an operator uses.
+
 ## v0.9.7 — 2026-08-17
 
 - Fixed a Tailscale startup race in the installed wrapper. `pr0xteus start`

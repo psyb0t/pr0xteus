@@ -6,6 +6,7 @@ CODEX.local.md
 .agent_knowledge/
 .secaudit/
 .testing/
+.config/
 .integration-work/
 .anustimes/
 .refactor/

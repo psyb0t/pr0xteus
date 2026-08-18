@@ -31,10 +31,22 @@ The exact scripts and override lookup live in the
 | `make build` | Docker | Build a static executable under `build/`. |
 | `make docker-build` | Docker | Build the production image. |
 | `make run-dev` | Docker | Build/run the development image with the race detector. |
+| `make config-init` | Docker + socket | Generate ignored local operator config using the locally built controller image. |
+| `make run` | Docker + socket | Build the local controller and cell images, then start the installer-equivalent dev stack. |
+| `make restart` / `make stop` / `make status` | Docker + socket | Control only that local `pr0xteus-dev` stack. |
 
 Use `make help` as the current target list. Do not replace these calls with a
 host `go test` or host linter in project automation: that gives two different
 toolchains two chances to disagree.
+
+`make run` is the operator path against local images. It runs the real
+installer in `PR0XTEUS_ENV=dev`, which builds the local controller and cell,
+creates ignored `.config/pr0xteus/`, and installs the same wrapper there. Make
+then runs `.config/pr0xteus/pr0xteus start` with that config directory. The
+only development differences are the `:dev`/`:cell-dev` image pin and Compose's
+`missing` pull policy, which preserves those local images. Tailscale remains a
+generated `.env` switch, just like an installed stack. This local config is
+separate from an operator's `~/.config/pr0xteus` stack.
 
 ## Tests, integration tests, and coverage
 

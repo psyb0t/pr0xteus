@@ -77,6 +77,7 @@ const (
 	cellLogMaxSize         = "10m"
 	cellLogMaxFiles        = "5"
 	cellCapabilityNetAdmin = "NET_ADMIN"
+	cellCapabilityReadHost = "DAC_READ_SEARCH"
 	cellCapabilitySetGID   = "SETGID"
 	cellCapabilitySetUID   = "SETUID"
 
@@ -397,6 +398,15 @@ func (s *CellSpawner) buildContainerConfig(
 // containerName:CellSocksPort, no host loopback round-trip needed.
 // When empty, host port mapping is used (smoke-test mode for direct
 // host CLI access).
+func cellCapabilities() []string {
+	return []string{
+		cellCapabilityNetAdmin,
+		cellCapabilityReadHost,
+		cellCapabilitySetGID,
+		cellCapabilitySetUID,
+	}
+}
+
 func (s *CellSpawner) buildHostConfig(
 	confPath string,
 ) *container.HostConfig {
@@ -404,12 +414,8 @@ func (s *CellSpawner) buildHostConfig(
 	pidsLimit := int64(cellPIDsLimit)
 
 	hostCfg := &container.HostConfig{
-		AutoRemove: true,
-		CapAdd: []string{
-			cellCapabilityNetAdmin,
-			cellCapabilitySetGID,
-			cellCapabilitySetUID,
-		},
+		AutoRemove:  true,
+		CapAdd:      cellCapabilities(),
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges:true"},
 		Init:        &initEnabled,
