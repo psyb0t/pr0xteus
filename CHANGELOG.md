@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.5 — 2026-08-21
+
+Fixes the badges job, the last thing keeping CI red.
+
+- The v0.10.3 migration set the code job's `coverage_artifact` to
+  `coverage-percent.txt`, but the badges job downloads the coverage artifact
+  under its default name `coverage`. The two never matched, so once the code job
+  went green (v0.10.4) the badges job failed with "Artifact not found for name:
+  coverage". Removed the explicit `coverage_artifact` so the code job and the
+  badges job both use the shared `coverage` default. `coverage-percent.txt` stays
+  the file name inside the artifact.
+
 ## v0.10.4 — 2026-08-21
 
 Fixes CI, which had been red since v0.10.2.

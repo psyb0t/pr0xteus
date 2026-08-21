@@ -30,7 +30,6 @@ jobs:
       # real drift.
       generate_command: "make generate"
       coverage_file: "coverage-percent.txt"
-      coverage_artifact: "coverage-percent.txt"
       sarif_file: "sec.sarif"
       sarif_category: "go"
 
