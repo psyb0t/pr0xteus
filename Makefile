@@ -19,6 +19,14 @@ DEV_RUN_DIND_EXTRA_ARGS := \
 	-e PR0XTEUS_REAL_TEST_COUNTRY \
 	-e PR0XTEUS_REAL_TEST_ENABLED
 
+SERVICEPACK_DEV_RUN := $(DEV_RUN)
+SERVICEPACK_DEV_RUN_DIND := $(DEV_RUN_DIND)
+LOCAL_TEST_LIFECYCLE := bash scripts/test-local-lifecycle.sh --
+LOCAL_TEST_TARGETS := test test-unit test-integration test-coverage test-api test-real
+
+$(LOCAL_TEST_TARGETS): private DEV_RUN := $(LOCAL_TEST_LIFECYCLE) $(SERVICEPACK_DEV_RUN)
+$(LOCAL_TEST_TARGETS): private DEV_RUN_DIND := $(LOCAL_TEST_LIFECYCLE) $(SERVICEPACK_DEV_RUN_DIND)
+
 .PHONY: test-api test-real test-installed build-cell config-init run restart stop status audit-compose
 
 # test-api builds pr0xteus from its production Dockerfile in Testcontainers,
@@ -31,8 +39,8 @@ test-api: dev-image build-cell ## Build pr0xteus from its Dockerfile in Testcont
 test-real: dev-image build-cell ## Opt-in real external-provider egress smoke test
 	@PR0XTEUS_REAL_TEST_ENABLED=true $(DEV_RUN_DIND) bash -ceu 'mkdir -p $(COVERAGE_DIRECTORY); go test -tags=integration,real -race -count=1 -timeout=600s ./tests/real 2>&1 | tee $(REAL_TEST_LOG)'
 
-test-installed: run dev-image ## Prove the installer-created stack API and real proxy egress
-	@docker run --rm --init --network pr0xteus-control \
+test-installed: dev-image ## Prove the installer-created stack API and real proxy egress
+	@$(LOCAL_TEST_LIFECYCLE) docker run --rm --init --network pr0xteus-control \
 		--user $(UID):$(GID) \
 		-e PR0XTEUS_TEST_BASE_URL=http://pr0xteus:8000 \
 		-e PR0XTEUS_TEST_METRICS_URL=http://pr0xteus:9091 \

@@ -39,6 +39,12 @@ Use `make help` as the current target list. Do not replace these calls with a
 host `go test` or host linter in project automation: that gives two different
 toolchains two chances to disagree.
 
+Every public `make test*` target resets and starts the local development stack
+through the same wrapper as `make restart`, runs its existing suite, and always
+calls `make stop` afterward. Cleanup also runs when a test fails or is
+interrupted. Tests therefore need no manual `make run` beforehand and never
+leave the local pr0xteus Compose project running.
+
 `make run` is the operator path against local images. It runs the real
 installer in `PR0XTEUS_ENV=dev`, which builds the local controller and cell,
 creates ignored `.config/pr0xteus/`, and installs the same wrapper there. Make

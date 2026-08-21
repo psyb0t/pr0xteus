@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.2 — 2026-08-21
+
+- Every `make test*` target now owns the local stack lifecycle: it resets and
+  starts the installer-equivalent development stack before its suite and stops
+  it on success, failure, or interruption, through the new
+  `scripts/test-local-lifecycle.sh` wrapper. Tests no longer need a manual
+  `make run` beforehand and never leave the local Compose project running.
+  `test-installed` no longer depends on the `run` target; the wrapper handles
+  startup and teardown.
+
 ## v0.10.1 — 2026-08-18
 
 - Fixed `pr0xteus upgrade` with the optional Tailscale profile. Upgrade now
