@@ -39,11 +39,13 @@ Use `make help` as the current target list. Do not replace these calls with a
 host `go test` or host linter in project automation: that gives two different
 toolchains two chances to disagree.
 
-Every public `make test*` target resets and starts the local development stack
-through the same wrapper as `make restart`, runs its existing suite, and always
-calls `make stop` afterward. Cleanup also runs when a test fails or is
-interrupted. Tests therefore need no manual `make run` beforehand and never
-leave the local pr0xteus Compose project running.
+`make test` and `make test-coverage` run the Testcontainers unit and integration
+suites and need no local stack, so CI runs them; `make test-coverage` also
+measures the Go coverage and gates it at the floor. `make test-installed` is the
+exception: it drives the live installer stack, so it resets and starts that stack
+before its suite through the same wrapper as `make restart` and always calls
+`make stop` afterward, including on failure or interruption. `make test-api` and
+`make test-real` are standalone Testcontainers suites you call on their own.
 
 `make run` is the operator path against local images. It runs the real
 installer in `PR0XTEUS_ENV=dev`, which builds the local controller and cell,

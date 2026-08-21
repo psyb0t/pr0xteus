@@ -19,13 +19,13 @@ DEV_RUN_DIND_EXTRA_ARGS := \
 	-e PR0XTEUS_REAL_TEST_COUNTRY \
 	-e PR0XTEUS_REAL_TEST_ENABLED
 
-SERVICEPACK_DEV_RUN := $(DEV_RUN)
-SERVICEPACK_DEV_RUN_DIND := $(DEV_RUN_DIND)
+# Only test-installed needs a running installer stack: it drives the live
+# http://pr0xteus:8000, so it wraps itself in this lifecycle (reset + start,
+# then stop after). Every other test target is self-contained through
+# Testcontainers and must NOT start a real stack, so CI, which has no wireguard
+# secrets to boot one, can run them. A test that needs `make restart` is a
+# local-only test, not a CI test.
 LOCAL_TEST_LIFECYCLE := bash scripts/test-local-lifecycle.sh --
-LOCAL_TEST_TARGETS := test test-unit test-integration test-coverage test-api test-real
-
-$(LOCAL_TEST_TARGETS): private DEV_RUN := $(LOCAL_TEST_LIFECYCLE) $(SERVICEPACK_DEV_RUN)
-$(LOCAL_TEST_TARGETS): private DEV_RUN_DIND := $(LOCAL_TEST_LIFECYCLE) $(SERVICEPACK_DEV_RUN_DIND)
 
 .PHONY: test-api test-real test-installed build-cell config-init run restart stop status audit-compose
 

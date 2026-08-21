@@ -476,10 +476,12 @@ make build-cell    # WireGuard + cellproxy image
 make run           # local images through the real installer and installed wrapper
 ```
 
-Every `make test*` target owns the local stack lifecycle. It resets and starts
-the installer-equivalent development stack before its suite, then stops it on
-success, failure, or interruption. Do not run `make run` before testing, and do
-not expect a test to leave pr0xteus running afterward.
+`make test` and `make test-coverage` run the Testcontainers unit and integration
+suites. They stand up their own containers and need no local stack, which is
+what lets CI run them. `make test-installed` is the exception: it drives the live
+installer stack, so it resets and starts that stack before its suite and stops it
+after, including on failure. `make test-api` and `make test-real` are standalone
+Testcontainers suites you call on their own.
 
 `make test-api` (and the broader `make test-integration`) use Testcontainers to
 build and start the **production** controller image, a self-contained WireGuard

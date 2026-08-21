@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.4 — 2026-08-21
+
+Fixes CI, which had been red since v0.10.2.
+
+- The v0.10.2 test-lifecycle wrapper started the installer dev-stack (`make
+  restart`) before every `make test*` target, including the `make test-coverage`
+  that CI runs. That stack needs wireguard secrets CI does not have, so its
+  config check failed and the whole run went red. Removed the wrapper from the
+  Testcontainers targets (`make test`, `make test-unit`, `make test-integration`,
+  `make test-coverage`, `make test-api`, `make test-real`); they stand up their
+  own containers and need no local stack, which is what lets CI run them.
+  `make test-installed`, which drives the live installer stack, keeps the
+  reset/start/stop lifecycle and stays a local-only target.
+
 ## v0.10.3 — 2026-08-21
 
 Development and CI tooling only. No change to the pr0xteus controller or proxy
