@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.6 — 2026-08-21
+
+Updates the Servicepack framework to v1.9.2 and drops the removed `make audit`
+target.
+
+- Updated Servicepack from v1.9.1 to v1.9.2, which removes the framework's
+  `make audit` target. `make sec` already runs `govulncheck` (with semgrep,
+  merged into `sec.sarif`), so the standalone vulnerability target was
+  redundant.
+- Removed the `make audit` line from the README target list and the development
+  docs. `make audit-compose` (Compose safety checks) is unchanged.
+
 ## v0.10.5 — 2026-08-21
 
 Fixes the badges job, the last thing keeping CI red.

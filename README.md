@@ -467,7 +467,6 @@ make test          # unit tests plus a real Testcontainers WireGuard/SOCKS5 stac
 make test-api      # build pr0xteus from its Dockerfile in Testcontainers, hit every route
 make test-real     # opt-in real provider allocation and public-IP egress proof
 make test-coverage # gate every package at 90% (servicepack coverage engine)
-make audit         # govulncheck
 make sec           # govulncheck + semgrep merged to sec.sarif; gates on findings
 make audit-compose # Compose safety checks
 make build         # static controller binary (./build)
