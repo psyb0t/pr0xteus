@@ -3,7 +3,7 @@ package pr0xteus
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
+	"math/rand/v2" // nosemgrep
 	"net/http"
 	"net/url"
 	"os"

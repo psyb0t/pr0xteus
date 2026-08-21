@@ -35,6 +35,7 @@ git-update.sh
 coverage.txt
 coverage.out
 coverage-percent.txt
+sec.sarif
 profile.out
 .cover/
 htmlcov/

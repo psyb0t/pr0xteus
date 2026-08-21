@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.10.3 — 2026-08-21
+
+Development and CI tooling only. No change to the pr0xteus controller or proxy
+behavior.
+
+- Updated the servicepack framework from v1.6.4 to v1.9.1: the testcontainers
+  integration harness now runs on the host network so sibling containers'
+  published ports are reachable, framework files re-sort their imports after a
+  module rename, a `make sec` target is available (govulncheck + semgrep), and
+  `make servicepack-update` itself is hardened (a git-defined backup that does
+  not choke on a dev stack's root-owned files, and a guard that fails the update
+  if a downstream `.gitignore` would silently drop a synced framework file).
+- Migrated CI from the Go-specific `go-workflow` to the generic `code-workflow`.
+  It runs `make lint`, `make test-coverage`, `make sec`, and `make generate`
+  (codegen-drift gate) in the dev image, uploads the coverage percentage for the
+  badge, and posts the security SARIF to the Security tab. The image build,
+  badges, and ClawHub publish now depend on this `code` job.
+- Added semgrep to the dev image so `make sec` runs, and marked two
+  false-positive `math/rand` findings (upstream selection and retry-backoff
+  jitter, neither needs crypto entropy) with a bare `// nosemgrep`.
+
 ## v0.10.2 — 2026-08-21
 
 - Every `make test*` target now owns the local stack lifecycle: it resets and

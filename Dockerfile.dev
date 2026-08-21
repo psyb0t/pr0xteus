@@ -13,7 +13,13 @@ RUN apk add --no-cache \
 		make=4.4.1-r4 \
 		ripgrep=15.1.0-r0 \
 		shellcheck=0.11.0-r1 \
-		shfmt=3.13.1-r1
+		shfmt=3.13.1-r1 \
+		python3=3.14.7-r1 \
+		py3-pip=26.1.2-r0
+
+# semgrep for the security scan (make sec). Installed via pip; modern semgrep
+# ships musl wheels that work on alpine. Pinned for reproducibility.
+RUN pip install --break-system-packages --no-cache-dir semgrep==1.173.0
 
 WORKDIR /work
 

@@ -6,7 +6,7 @@ package client
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
+	"math/rand/v2" // nosemgrep
 	"net"
 	"net/http"
 	"time"
