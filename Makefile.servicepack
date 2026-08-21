@@ -26,11 +26,15 @@ DEV_RUN := docker run --rm --init \
 	-w /work \
 	$(DEV_IMAGE)
 
-# Testcontainers talks to the host daemon. Keep the workspace at its host path
-# so bind mounts requested by a sibling test container resolve correctly.
+# Integration tests use testcontainers, which drive the host docker daemon to
+# start sibling containers. --network host puts the test process in the host's
+# network namespace so those containers' host-published ports are reachable at
+# localhost:<mapped> (dev/CI test runs only, never prod). The workspace stays at
+# its host path so bind mounts a sibling container requests resolve correctly.
 DEV_RUN_DIND = docker run --rm --init \
 	--user $(UID):$(GID) \
 	--group-add $(DOCKER_GID) \
+	--network host \
 	-e HOME=/tmp \
 	-e GOPATH=/tmp/go \
 	-e GOCACHE=/tmp/go-cache \
@@ -62,7 +66,7 @@ endef
 
 # Framework PHONY targets
 .PHONY: all dev-image shell pkg-lock pkg-add pkg-update pkg-upgrade pkg-remove \
-	pkg-add-tool pkg-remove-tool audit dep lint lint-fix format test test-unit \
+	pkg-add-tool pkg-remove-tool audit dep lint lint-fix format servicepack-reformat test test-unit \
 	test-integration test-coverage generate build clean \
 	service service-remove service-registration servicepack-update \
 	servicepack-update-review servicepack-update-merge servicepack-update-revert \
@@ -153,6 +157,14 @@ lint-fix: ## Lint all Golang files and fix
 format: dev-image ## Format Go source files
 	@$(DEV_RUN) sh -ceu 'go tool gofumpt -w .; shfmt -w $$(find scripts -type f -name "*.sh")'
 
+# Internal: used by servicepack-update after the module-path rewrite. Runs the
+# project's own formatters (gci/gofumpt/goimports via golangci-lint, i.e. exactly
+# what `make lint` checks) over just the files in REFORMAT_FILES, so a renamed
+# import path lands correctly sorted. Scoped to a file list on purpose: never
+# touches downstream-owned or generated code.
+servicepack-reformat: dev-image ## Re-format the files named in REFORMAT_FILES (internal, used by servicepack-update)
+	@[ -n "$(REFORMAT_FILES)" ] && $(DEV_RUN) go tool golangci-lint fmt $(REFORMAT_FILES) || true
+
 test: ## Run all tests
 	@$(MAKE) dev-image
 	@$(call run_dind_script,test.sh)
@@ -169,6 +181,9 @@ test-coverage: ## Run tests with coverage check. Fails if coverage is below the 
 
 audit: dev-image ## Scan the codebase for known Go vulnerabilities
 	@$(DEV_RUN) go tool govulncheck ./...
+
+sec: dev-image ## Full security scan (govulncheck + semgrep) writing a merged SARIF to sec.sarif
+	@$(call run_dev_script,sec.sh)
 
 generate: dev-image ## Regenerate all generated Go code
 	@$(DEV_RUN) go generate ./...

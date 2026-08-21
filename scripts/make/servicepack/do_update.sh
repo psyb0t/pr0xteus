@@ -90,8 +90,9 @@ section "Updating Framework Files"
 # ITS OWN .servicepackupdateignore -- that is the intended opt-out, not a
 # blanket exclude baked into the framework.
 #
-# The list above is only the mechanical floor (git internals, the dependency
-# merge, per-project prose). The opt-outs that nearly every project wants ship
+# The list above is the mechanical floor (git internals, the dependency merge,
+# per-project prose, and the downstream-owned docs/ and tests/ trees). The
+# opt-outs that nearly every project wants ship
 # in the .servicepackupdateignore this repo hands you -- the framework's own
 # publication workflows, agent skill, funding links, secret-scanning allowlist
 # and docker context. Those are the framework's furniture rather than a
@@ -117,6 +118,14 @@ section "Updating Framework Files"
 # hands off it.
 EXCLUDE_ARGS=(
 	"--exclude=internal/pkg/services/*"
+	# A downstream owns its docs and its test tree outright. docs/ is prose it
+	# rewrites for its own app. tests/ is the testcontainers harness plus its
+	# own service tests. The framework ships both only as a scaffold, and an
+	# update overwriting either is never wanted, so this protection lives in the
+	# mechanical floor. It is not an optional per-project opt-out a downstream
+	# has to remember to copy into its .servicepackupdateignore.
+	"--exclude=docs/"
+	"--exclude=tests/"
 	"--exclude=README.md"
 	"--exclude=LICENSE"
 	"--exclude=CHANGELOG.md"
@@ -142,6 +151,27 @@ if [ -f ".servicepackupdateignore" ]; then
 		[[ -z "${line// /}" ]] && continue
 		EXCLUDE_ARGS+=("--exclude=$line")
 	done <.servicepackupdateignore
+fi
+
+# Guard against a silent time bomb: a framework file rsync would deliver but the
+# downstream's .gitignore hides. rsync ignores .gitignore and writes the file, so
+# it builds locally, but the `git add -A` in _post_update.sh honors .gitignore
+# and never stages it. The commit then ships without it and CI or a fresh clone
+# comes up missing framework code. Compute the would-sync set with a dry run and
+# fail now, before writing anything or mutating go.mod.
+info "Checking no synced framework file is hidden by .gitignore..."
+WOULD_SYNC=$(mktemp)
+rsync -an --out-format='%n' "${EXCLUDE_ARGS[@]}" "$TEMP_DIR/" ./ >"$WOULD_SYNC"
+IGNORED_SYNCED=$(git check-ignore --stdin <"$WOULD_SYNC" 2>/dev/null || true)
+rm -f "$WOULD_SYNC"
+if [ -n "$IGNORED_SYNCED" ]; then
+	error "Your .gitignore hides framework files this update would sync:"
+	while IFS= read -r ignored_path; do
+		printf '  %s\n' "$ignored_path" >&2
+	done <<<"$IGNORED_SYNCED"
+	error "git add -A would silently drop them: builds locally, breaks CI and fresh clones."
+	warning "Un-ignore or anchor those patterns, then re-run after: git checkout $CURRENT_BRANCH && git branch -D $UPDATE_BRANCH"
+	exit 1
 fi
 
 # Update core framework files with exclusions.
