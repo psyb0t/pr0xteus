@@ -20,14 +20,9 @@ jobs:
     with:
       lint_command: "make lint"
       test_command: "make test-coverage"
-      # Full security scan (govulncheck + semgrep) merged into sec.sarif, run in
-      # the dev image. Gates on findings; two false-positive math/rand hits
-      # (upstream selection + retry jitter, no crypto entropy needed) carry a
-      # bare `// nosemgrep`.
+      # Two math/rand hits carry a bare `// nosemgrep` (upstream selection and
+      # retry jitter, no crypto entropy needed).
       sec_command: "make sec"
-      # Runs all codegen then fails on a dirty tree, catching a hand-edited or
-      # un-regenerated generated file. Idempotent on pr0xteus, so any diff is a
-      # real drift.
       generate_command: "make generate"
       coverage_file: "coverage-percent.txt"
       sarif_file: "sec.sarif"
