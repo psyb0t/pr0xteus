@@ -63,7 +63,7 @@ your existing operator configuration.
 ## Tailscale sidecar
 
 To reach the authenticated controller API from your tailnet without binding
-the controller, metrics, or SOCKS gateway on the host, add this to the
+the controller, metrics, SOCKS5 gateway, or HTTP proxy on the host, add this to the
 owner-only `~/.config/pr0xteus/.env`:
 
 ```dotenv
@@ -77,13 +77,13 @@ TS_EXTRA_ARGS=--accept-dns=false
 `pr0xteus start` enables the Compose `tailscale` profile, gives the sidecar its
 own tailnet identity, and wires Tailscale Serve to the private controller over
 the Docker `control` network: HTTP on port 80 goes to `pr0xteus:8000`, TCP port
-9091 goes to the private metrics listener, and TCP port 1080 goes to the
-controller SOCKS gateway. The no-host-ports Compose
-override removes all three controller port publications. When MagicDNS names
-the node `pr0xteus`, use `http://pr0xteus/v1/...` for the API and the returned
-lease URL targets `pr0xteus:1080`. Tailscale encrypts both paths; the bearer
-token is still required for API calls and the lease credentials are still
-required for SOCKS.
+9091 goes to the private metrics listener, TCP port 1080 goes to the controller
+SOCKS5 gateway, and TCP port 8080 goes to the controller HTTP proxy. The
+no-host-ports Compose override removes all four controller port publications.
+When MagicDNS names the node `pr0xteus`, use `http://pr0xteus/v1/...` for the
+API and returned URLs target `pr0xteus:1080` and `pr0xteus:8080`. Tailscale
+encrypts every path; the bearer token is still required for API calls and the
+lease credentials are still required for both proxy protocols.
 
 For a direct Compose deployment, use the same generated config and wire Serve
 after the sidecar has joined:
@@ -116,11 +116,19 @@ docker compose --profile tailscale \
   -f "$HOME/.config/pr0xteus/docker-compose.yml" \
   -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
   exec -T tailscale tailscale serve --bg --tcp=1080 tcp://pr0xteus:1080
+
+docker compose --profile tailscale \
+  --project-directory "$HOME/.config/pr0xteus" \
+  --env-file "$HOME/.config/pr0xteus/.env" \
+  -f "$HOME/.config/pr0xteus/docker-compose.yml" \
+  -f "$HOME/.config/pr0xteus/docker-compose.no-host-ports.yml" \
+  exec -T tailscale tailscale serve --bg --tcp=8080 tcp://pr0xteus:8080
 ```
 
-For direct Compose, set `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` to the sidecar's
-MagicDNS host plus `:1080`, then recreate `pr0xteus` so future leases use that
-reachable address. The `pr0xteus` wrapper performs those two steps itself.
+For direct Compose, set `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` and
+`PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS` to the sidecar's MagicDNS host with ports
+`1080` and `8080`, then recreate `pr0xteus` so future leases use reachable
+addresses. The `pr0xteus` wrapper performs those steps itself.
 
 The sidecar never publishes a host port and does not reuse a Tailscale client
 running on the host. Its persistent state is
@@ -136,8 +144,8 @@ Leave `PR0XTEUS_DISABLE_HOST_PORTS=false` for the default loopback deployment.
 While it is false, the `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT`
 mappings that default to `127.0.0.1`. Set one to `0.0.0.0:PORT` only when an
 authenticated private network boundary protects it. Keep
-`PR0XTEUS_SOCKS_PUBLIC_ADDRESS` set to a real reachable address for allocated
-SOCKS URLs; never use `0.0.0.0` for that value.
+both `*_PUBLIC_ADDRESS` values set to real reachable addresses for allocated
+proxy URLs; never use `0.0.0.0` for either value.
 
 ## Verify the default host-local deployment without leaking the bearer token
 
@@ -151,11 +159,10 @@ curl --fail-with-body --request POST \
 unset token
 ```
 
-The returned `socks5://...` URL is a short-lived controller SOCKS gateway
-lease and works from the host or another trusted client that can reach the
-gateway. The controller forwards it to the selected cell through the internal
-cell-control network. In Tailscale-only mode, the wrapper returns a lease URL
-with the sidecar's MagicDNS host on port 1080, so make the authenticated API
+The response contains short-lived `socks5://...` and `http://...` controller
+lease URLs. They work from the host or another trusted client that can reach
+the controller. In Tailscale-only mode, the wrapper returns URLs with the
+sidecar's MagicDNS host on ports 1080 and 8080, so make the authenticated API
 call and use the lease from another tailnet machine. Do not publish a cell port
 or expose the controller API beyond an authenticated private boundary.
 

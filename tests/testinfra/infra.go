@@ -57,11 +57,17 @@ const (
 )
 
 // ProxyAssignment is the production HTTP response returned after the
-// controller creates a handshake-ready, controller-fronted SOCKS5 lease.
+// controller creates a handshake-ready, controller-fronted proxy lease.
 type ProxyAssignment struct {
-	URL         string `json:"url"`
-	Pool        string `json:"pool"`
-	ExitCountry string `json:"exitCountry"`
+	Proxies     ProxyURLs `json:"proxies"`
+	Pool        string    `json:"pool"`
+	ExitCountry string    `json:"exitCountry"`
+}
+
+// ProxyURLs is the controller response's pair of public proxy endpoints.
+type ProxyURLs struct {
+	SOCKS5 string `json:"socks5"`
+	HTTP   string `json:"http"`
 }
 
 // ExternalProviderConfig identifies an operator-owned WireGuard bundle and
@@ -318,20 +324,22 @@ func (i *Infra) setupController(ctx context.Context) error {
 		// needs real Docker access to spawn cell containers, so this suite never
 		// exercises the socket-proxy allowlist boundary. That boundary is
 		// verified separately by `make audit-compose` / scripts/audit-compose.sh.
-		"PR0XTEUS_DOCKER_HOST":          "unix:///var/run/docker.sock",
-		"PR0XTEUS_MANAGED_SCOPE":        filepath.Base(i.workDir),
-		"TUNNEL_POOL_DEFAULT_POOL":      "integration",
-		"TUNNEL_POOL_BUNDLE_DIR":        bundleDir,
-		"TUNNEL_POOL_LISTEN_ADDR":       ":8000",
-		"TUNNEL_POOL_METRICS_ADDR":      ":9091",
-		"TUNNEL_POOL_SOCKS_ADDR":        ":1080",
-		"TUNNEL_POOL_SOCKS_PUBLIC_ADDR": controllerAlias + ":1080",
-		"TUNNEL_POOL_POOLS_FILE":        poolsFile,
-		"TUNNEL_POOL_ROUTING_FILE":      routingFile,
-		"TUNNEL_POOL_SPAWN_TIMEOUT":     "2m",
-		"LOG_ADD_SOURCE":                "true",
-		"LOG_FORMAT":                    "json",
-		"LOG_LEVEL":                     "info",
+		"PR0XTEUS_DOCKER_HOST":               "unix:///var/run/docker.sock",
+		"PR0XTEUS_MANAGED_SCOPE":             filepath.Base(i.workDir),
+		"TUNNEL_POOL_DEFAULT_POOL":           "integration",
+		"TUNNEL_POOL_BUNDLE_DIR":             bundleDir,
+		"TUNNEL_POOL_LISTEN_ADDR":            ":8000",
+		"TUNNEL_POOL_METRICS_ADDR":           ":9091",
+		"TUNNEL_POOL_SOCKS_ADDR":             ":1080",
+		"TUNNEL_POOL_SOCKS_PUBLIC_ADDR":      controllerAlias + ":1080",
+		"TUNNEL_POOL_HTTP_PROXY_ADDR":        ":8080",
+		"TUNNEL_POOL_HTTP_PROXY_PUBLIC_ADDR": controllerAlias + ":8080",
+		"TUNNEL_POOL_POOLS_FILE":             poolsFile,
+		"TUNNEL_POOL_ROUTING_FILE":           routingFile,
+		"TUNNEL_POOL_SPAWN_TIMEOUT":          "2m",
+		"LOG_ADD_SOURCE":                     "true",
+		"LOG_FORMAT":                         "json",
+		"LOG_LEVEL":                          "info",
 	}
 	if i.coverageOutput != "" {
 		dockerfile = controllerCoverageDockerfile
@@ -764,12 +772,12 @@ func (i *Infra) curlStatus(
 	return code, nil
 }
 
-// AssertProxyEgress proves a returned controller SOCKS5 URL routes a request
+// AssertProxyEgress proves a returned controller proxy URL routes a request
 // through the WireGuard peer. The target is an isolated HTTP server on the
 // peer itself, so CI never depends on a public API or provider account.
 func (i *Infra) AssertProxyEgress(ctx context.Context, proxyURL string) error {
 	if i.Consumer == nil {
-		return ctxerrors.New("SOCKS5 consumer is not running")
+		return ctxerrors.New("proxy consumer is not running")
 	}
 
 	exitCode, output, err := i.Consumer.Exec(ctx, []string{
@@ -784,20 +792,20 @@ func (i *Infra) AssertProxyEgress(ctx context.Context, proxyURL string) error {
 		"http://" + i.peerTarget + "/healthz",
 	}, tcexec.Multiplexed())
 	if err != nil {
-		return ctxerrors.Wrap(err, "execute SOCKS5 egress request")
+		return ctxerrors.Wrap(err, "execute proxy egress request")
 	}
 
 	var response []byte
 	if output != nil {
 		response, err = io.ReadAll(output)
 		if err != nil {
-			return ctxerrors.Wrap(err, "read SOCKS5 egress response")
+			return ctxerrors.Wrap(err, "read proxy egress response")
 		}
 	}
 
 	if exitCode != 0 {
 		return ctxerrors.Wrapf(
-			ctxerrors.New("SOCKS5 egress request failed"),
+			ctxerrors.New("proxy egress request failed"),
 			"curl output: %s",
 			strings.TrimSpace(string(response)),
 		)

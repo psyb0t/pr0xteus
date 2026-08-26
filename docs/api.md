@@ -4,11 +4,11 @@ The control API is a small private HTTP API. It is versioned under `/v1`,
 requires `Authorization: Bearer <token>` on every route, and is loopback-bound
 by default in the supplied Compose stack. `PR0XTEUS_DISABLE_HOST_PORTS=true`
 removes every host binding for a private Docker-network gateway such as the
-Tailscale sidecar. `POST /v1/proxies` allocates one SOCKS5 lease; `GET
+Tailscale sidecar. `POST /v1/proxies` allocates one proxy lease; `GET
 /v1/proxies` lists active exits. The shared path is intentional: POST is the
 state-changing collection action and GET is the read-only collection view.
 
-For a safe manual request and a real SOCKS5 egress proof, follow
+For a safe manual request and real SOCKS5 and HTTP egress proofs, follow
 [complete-example.md](complete-example.md). The handler and pool state behind
 these routes are documented in [internal/README.md](../internal/pkg/services/pr0xteus/README.md).
 
@@ -41,16 +41,20 @@ Successful response (`200 OK`):
 
 ```json
 {
-  "url": "socks5://lease-id:lease-secret@127.0.0.1:1080",
+  "proxies": {
+    "socks5": "socks5://lease-id:lease-secret@127.0.0.1:1080",
+    "http": "http://lease-id:lease-secret@127.0.0.1:8080"
+  },
   "pool": "primary",
   "exitCountry": "US",
   "expiresAt": "2026-01-01T00:15:00Z"
 }
 ```
 
-The URL points at the controller's SOCKS5 gateway, carries a random short-lived
-username/password lease, and routes only to the exact cell selected for this
-allocation. Keep it out of logs. A lease never silently switches to a
+`proxies.socks5` points at the controller's SOCKS5 gateway and `proxies.http`
+points at its standard HTTP proxy. They carry one random short-lived
+username/password lease and route only to the exact cell selected for this
+allocation. Keep both URLs out of logs. A lease never silently switches to a
 replacement cell. `exitIP` is reserved optional metadata and is normally
 omitted; the controller does not make an external exit-IP lookup. Do not make
 correctness depend on it.

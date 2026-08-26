@@ -181,7 +181,7 @@ func TestAPIServer_AssignsCountryAndPool(t *testing.T) {
 
 			var payload ProxyResponse
 			require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-			assertProxyLeaseURL(t, payload.URL)
+			assertProxyLeaseURLs(t, payload.Proxies)
 			assert.Equal(t, "western", payload.Pool)
 			assert.Equal(t, "DE", payload.ExitCountry)
 			assert.WithinDuration(t, time.Now().Add(defaultProxyLeaseTTL), payload.ExpiresAt, time.Second)
@@ -214,7 +214,7 @@ func TestAPIServer_ListsActiveProxies(t *testing.T) {
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
 	require.Len(t, payload.Proxies, 1)
 	assert.Equal(t, 1, payload.Total)
-	assert.Equal(t, allocation.URL, payload.Proxies[0].LastURL)
+	assert.Equal(t, allocation.Proxies.SOCKS5, payload.Proxies[0].LastURL)
 	assert.Equal(t, allocation.ExpiresAt, payload.Proxies[0].LastURLExpiresAt)
 	assert.Equal(t, "western", payload.Proxies[0].Pool)
 }
@@ -290,7 +290,7 @@ func TestAPIServer_AcceptsIssuedURLForExcludeProxy(t *testing.T) {
 			t,
 			http.MethodPost,
 			pathV1Proxies,
-			`{"country":"DE","excludeProxy":`+strconv.Quote(previous.URL)+`}`,
+			`{"country":"DE","excludeProxy":`+strconv.Quote(previous.Proxies.SOCKS5)+`}`,
 		),
 	)
 	assert.Equal(t, http.StatusServiceUnavailable, replacement.Code)

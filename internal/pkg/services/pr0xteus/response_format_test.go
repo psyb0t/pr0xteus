@@ -39,30 +39,40 @@ func TestAPIServer_ProxyResponseFormat(t *testing.T) {
 	assertJSONContentType(t, response)
 
 	body := response.Body.String()
-	for _, key := range []string{`"url"`, `"pool"`, `"exitCountry"`} {
+	for _, key := range []string{`"proxies"`, `"socks5"`, `"http"`, `"pool"`, `"exitCountry"`} {
 		assert.Contains(t, body, key, "proxy response must carry %s", key)
 	}
 
 	var payload ProxyResponse
 	require.NoError(t, json.Unmarshal([]byte(body), &payload))
-	assertProxyLeaseURL(t, payload.URL)
+	assertProxyLeaseURLs(t, payload.Proxies)
 	assert.Equal(t, "western", payload.Pool)
 	assert.Equal(t, "DE", payload.ExitCountry)
 	assert.False(t, payload.ExpiresAt.IsZero())
 }
 
-func assertProxyLeaseURL(t *testing.T, raw string) {
+func assertProxyLeaseURLs(t *testing.T, proxyURLs ProxyURLs) {
 	t.Helper()
 
-	leaseURL, err := url.Parse(raw)
+	socksURL, err := url.Parse(proxyURLs.SOCKS5)
 	require.NoError(t, err)
-	assert.Equal(t, proxySchemeSOCKS5, leaseURL.Scheme)
-	assert.Equal(t, defaultSOCKSPublicAddr, leaseURL.Host)
-	require.NotNil(t, leaseURL.User)
-	assert.NotEmpty(t, leaseURL.User.Username())
-	password, ok := leaseURL.User.Password()
+	assert.Equal(t, proxySchemeSOCKS5, socksURL.Scheme)
+	assert.Equal(t, defaultSOCKSPublicAddr, socksURL.Host)
+	require.NotNil(t, socksURL.User)
+	require.NotEmpty(t, socksURL.User.Username())
+	socksPassword, ok := socksURL.User.Password()
 	require.True(t, ok)
-	assert.NotEmpty(t, password)
+	require.NotEmpty(t, socksPassword)
+
+	httpURL, err := url.Parse(proxyURLs.HTTP)
+	require.NoError(t, err)
+	assert.Equal(t, proxySchemeHTTP, httpURL.Scheme)
+	assert.Equal(t, defaultHTTPProxyPublicAddr, httpURL.Host)
+	require.NotNil(t, httpURL.User)
+	assert.Equal(t, socksURL.User.Username(), httpURL.User.Username())
+	httpPassword, ok := httpURL.User.Password()
+	require.True(t, ok)
+	assert.Equal(t, socksPassword, httpPassword)
 }
 
 func TestAPIServer_PoolsResponseFormat(t *testing.T) {

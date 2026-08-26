@@ -316,7 +316,9 @@ wire_tailscale_serve() {
 				compose "$config_dir" exec -T tailscale \
 					tailscale serve --bg --tcp=9091 tcp://pr0xteus:9091 &&
 				compose "$config_dir" exec -T tailscale \
-					tailscale serve --bg --tcp=1080 tcp://pr0xteus:1080; then
+					tailscale serve --bg --tcp=1080 tcp://pr0xteus:1080 &&
+				compose "$config_dir" exec -T tailscale \
+					tailscale serve --bg --tcp=8080 tcp://pr0xteus:8080; then
 				dns_name="$(compose "$config_dir" exec -T tailscale tailscale status --json | awk '
                     /"Self":/ { in_self = 1; next }
                     in_self && /"DNSName":/ {
@@ -330,8 +332,9 @@ wire_tailscale_serve() {
                 ')"
 				[[ -n "$dns_name" ]] || fail "Tailscale did not report its DNS name"
 				env_set "$config_dir" PR0XTEUS_SOCKS_PUBLIC_ADDRESS "${dns_name}:1080"
+				env_set "$config_dir" PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS "${dns_name}:8080"
 				compose "$config_dir" up --detach --no-deps --force-recreate pr0xteus
-				say "Tailscale Serve is routing tailnet API, metrics, and SOCKS5 to pr0xteus"
+				say "Tailscale Serve is routing tailnet API, metrics, SOCKS5, and HTTP proxy to pr0xteus"
 
 				return
 			fi

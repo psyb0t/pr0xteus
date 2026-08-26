@@ -3,6 +3,7 @@ package pr0xteus
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/psyb0t/gonfiguration"
 	"github.com/stretchr/testify/assert"
@@ -107,6 +108,20 @@ func TestLoadConfig_Validation(t *testing.T) {
 			wantErr: ErrConfigInvalid,
 		},
 		{
+			name: "rejects malformed HTTP proxy listener",
+			configure: func(t *testing.T) {
+				t.Setenv("TUNNEL_POOL_HTTP_PROXY_ADDR", "8080")
+			},
+			wantErr: ErrConfigInvalid,
+		},
+		{
+			name: "rejects HTTP proxy public address without host",
+			configure: func(t *testing.T) {
+				t.Setenv("TUNNEL_POOL_HTTP_PROXY_PUBLIC_ADDR", ":8080")
+			},
+			wantErr: ErrConfigInvalid,
+		},
+		{
 			name: "rejects nonpositive proxy lease TTL",
 			configure: func(t *testing.T) {
 				t.Setenv("TUNNEL_POOL_PROXY_LEASE_TTL", "0s")
@@ -147,6 +162,64 @@ func TestLoadConfig_Validation(t *testing.T) {
 			if tc.wantCellImage != "" {
 				assert.Equal(t, tc.wantCellImage, cfg.CellImage)
 			}
+		})
+	}
+}
+
+func TestLoadConfig_DefaultProxyAddresses(t *testing.T) {
+	configureValidEnvironment(t)
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	assert.Equal(t, defaultSOCKSListenAddr, cfg.socksListenAddr())
+	assert.Equal(t, defaultSOCKSPublicAddr, cfg.socksPublicAddr())
+	assert.Equal(t, defaultHTTPProxyListenAddr, cfg.httpProxyListenAddr())
+	assert.Equal(t, defaultHTTPProxyPublicAddr, cfg.httpProxyPublicAddr())
+}
+
+func TestConfig_UsesProxyDefaultsForAnEmptyConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{}
+	assert.Equal(t, defaultSOCKSListenAddr, cfg.socksListenAddr())
+	assert.Equal(t, defaultSOCKSPublicAddr, cfg.socksPublicAddr())
+	assert.Equal(t, defaultHTTPProxyListenAddr, cfg.httpProxyListenAddr())
+	assert.Equal(t, defaultHTTPProxyPublicAddr, cfg.httpProxyPublicAddr())
+	assert.Equal(t, defaultProxyLeaseTTL, cfg.proxyLeaseTTL())
+
+	cfg.ProxyLeaseTTL = time.Minute
+	assert.Equal(t, time.Minute, cfg.proxyLeaseTTL())
+}
+
+func TestValidateTCPAddress(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		address        string
+		allowEmptyHost bool
+		wantErr        bool
+	}{
+		{name: "listener accepts an empty host", address: ":8080", allowEmptyHost: true},
+		{name: "public address requires a host", address: ":8080", wantErr: true},
+		{name: "accepts an IPv4 host", address: "127.0.0.1:8080"},
+		{name: "rejects malformed address", address: "8080", wantErr: true},
+		{name: "rejects nonnumeric port", address: "proxy.example:abc", wantErr: true},
+		{name: "rejects out of range port", address: "proxy.example:65536", wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateTCPAddress(tc.address, tc.allowEmptyHost, "TEST_ADDRESS")
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrConfigInvalid)
+
+				return
+			}
+
+			require.NoError(t, err)
 		})
 	}
 }

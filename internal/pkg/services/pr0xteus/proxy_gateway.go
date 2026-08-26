@@ -3,17 +3,18 @@ package pr0xteus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/psyb0t/ctxerrors"
 	"github.com/psyb0t/ctxscope"
 	thingsocks5 "github.com/things-go/go-socks5"
-	"golang.org/x/net/proxy"
 )
 
-const proxyGatewayDialTimeout = 15 * time.Second
+const proxyRelayDialTimeout = 15 * time.Second
 
 // ProxyGateway exposes lease-authenticated SOCKS5 CONNECT on the controller.
 // It has no egress network route: every destination connection is delegated to
@@ -45,6 +46,7 @@ func (g *ProxyGateway) Start(ctx context.Context, errorsOut chan<- error) error 
 		thingsocks5.WithResolver(cellResolver{}),
 		thingsocks5.WithRule(&thingsocks5.PermitCommand{EnableConnect: true}),
 		thingsocks5.WithDialAndRequest(g.dial),
+		thingsocks5.WithLogger(newProxyGatewaySocksLogger(ctx)),
 	)
 
 	go func() {
@@ -94,41 +96,7 @@ func (g *ProxyGateway) dial(
 	username := request.AuthContext.Payload["username"]
 	password := request.AuthContext.Payload["password"]
 
-	acquisition, err := g.manager.AcquireForLease(username, password)
-	if err != nil {
-		return nil, ctxerrors.Wrap(err, "acquire cell for proxy lease")
-	}
-
-	dialContext, cancel := context.WithTimeout(ctx, proxyGatewayDialTimeout)
-	defer cancel()
-
-	upstream, err := proxy.SOCKS5(
-		network,
-		acquisition.Tunnel.GatewayAddr,
-		nil,
-		&net.Dialer{Timeout: proxyGatewayDialTimeout},
-	)
-	if err != nil {
-		g.manager.Release(acquisition)
-
-		return nil, ctxerrors.Wrap(err, "create cell SOCKS5 dialer")
-	}
-
-	contextDialer, ok := upstream.(proxy.ContextDialer)
-	if !ok {
-		g.manager.Release(acquisition)
-
-		return nil, ctxerrors.New("cell SOCKS5 dialer lacks context support")
-	}
-
-	connection, err := contextDialer.DialContext(dialContext, network, address)
-	if err != nil {
-		g.manager.Release(acquisition)
-
-		return nil, ctxerrors.Wrap(err, "dial destination through cell SOCKS5 proxy")
-	}
-
-	return &releaseConn{Conn: connection, release: func() { g.manager.Release(acquisition) }}, nil
+	return g.manager.dialLease(ctx, username, password, network, address)
 }
 
 type proxyLeaseCredentials struct {
@@ -141,13 +109,58 @@ func (c proxyLeaseCredentials) Valid(username, password, _ string) bool {
 	return ok
 }
 
-// cellResolver deliberately does not resolve client destinations on the
-// controller. go-socks5 requires a resolver before it forwards the raw FQDN to
-// the upstream SOCKS5 cell, where WireGuard-provided DNS resolves it.
+// cellResolver preserves client FQDNs for the upstream cell. go-socks5 writes
+// the resolver result into the raw destination, so a nil IP retains the FQDN
+// for the cell's WireGuard-provided DNS.
 type cellResolver struct{}
 
 func (cellResolver) Resolve(ctx context.Context, _ string) (context.Context, net.IP, error) {
-	return ctx, net.IPv4zero, nil
+	return ctx, nil, nil
+}
+
+type proxyGatewaySocksLogger struct {
+	log func(socks5FailureReason)
+}
+
+func (l proxyGatewaySocksLogger) Errorf(format string, args ...any) {
+	l.log(classifySOCKS5Failure(format, args...))
+}
+
+func newProxyGatewaySocksLogger(ctx context.Context) proxyGatewaySocksLogger {
+	return proxyGatewaySocksLogger{log: func(reason socks5FailureReason) {
+		logger := ctxscope.GetLogger(ctx)
+		if reason == socks5FailureClientDisconnected {
+			logger.Debug("controller SOCKS5 client disconnected", "reason", reason)
+
+			return
+		}
+
+		logger.Warn("controller SOCKS5 relay failed", "reason", reason)
+	}}
+}
+
+const (
+	socks5FailureAuthenticationFailed socks5FailureReason = "authentication_failed"
+	socks5FailureClientDisconnected   socks5FailureReason = "client_disconnected"
+	socks5FailureProtocolError        socks5FailureReason = "protocol_error"
+	socks5FailureUpstreamConnect      socks5FailureReason = "upstream_connect_failed"
+)
+
+type socks5FailureReason string
+
+func classifySOCKS5Failure(format string, args ...any) socks5FailureReason {
+	message := fmt.Sprintf(format, args...)
+
+	switch {
+	case strings.Contains(message, "EOF"):
+		return socks5FailureClientDisconnected
+	case strings.Contains(message, "failed to authenticate"):
+		return socks5FailureAuthenticationFailed
+	case strings.Contains(message, "connect to"):
+		return socks5FailureUpstreamConnect
+	default:
+		return socks5FailureProtocolError
+	}
 }
 
 type releaseConn struct {

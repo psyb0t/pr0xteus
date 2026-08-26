@@ -103,16 +103,24 @@ func TestRealExternalProvider_ChangesPublicEgressIP(t *testing.T) {
 	require.NotEmpty(t, assignment.Pool)
 	require.NotEmpty(t, assignment.ExitCountry)
 
-	proxyURL, err := url.Parse(assignment.URL)
+	socksURL, err := url.Parse(assignment.Proxies.SOCKS5)
 	require.NoError(t, err)
-	require.Equal(t, "socks5", proxyURL.Scheme)
-	require.NotEmpty(t, proxyURL.Host)
+	require.Equal(t, "socks5", socksURL.Scheme)
+	require.NotEmpty(t, socksURL.Host)
+
+	httpURL, err := url.Parse(assignment.Proxies.HTTP)
+	require.NoError(t, err)
+	require.Equal(t, "http", httpURL.Scheme)
+	require.NotEmpty(t, httpURL.Host)
 
 	directIP, err := observedPublicIP(ctx, "", true)
 	require.NoError(t, err)
-	proxiedIP, err := observedPublicIP(ctx, assignment.URL, false)
+	socksIP, err := observedPublicIP(ctx, assignment.Proxies.SOCKS5, false)
 	require.NoError(t, err)
-	require.NotEqual(t, directIP, proxiedIP)
+	httpIP, err := observedPublicIP(ctx, assignment.Proxies.HTTP, false)
+	require.NoError(t, err)
+	require.NotEqual(t, directIP, socksIP)
+	require.Equal(t, socksIP, httpIP)
 }
 
 func observedPublicIP(

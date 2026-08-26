@@ -1,6 +1,6 @@
 ---
 name: pr0xteus
-description: Give a trusted self-hosted workload a configured WireGuard-backed SOCKS5 exit through pr0xteus's bearer-protected private HTTP API. Request an operator-approved ISO country or logical pool, inspect current leased-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and a controller-fronted SOCKS5 gateway. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
+description: Give a trusted self-hosted workload configured WireGuard-backed SOCKS5 and HTTP exits through pr0xteus's bearer-protected private API. Request an operator-approved ISO country or logical pool, inspect leased-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and controller-fronted proxies. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
 homepage: https://github.com/psyb0t/pr0xteus
 user-invocable: true
 metadata:
@@ -10,20 +10,20 @@ metadata:
     requires:
       bins: [bash, curl, docker, jq]
 permissions:
-  network: "Runtime control-API calls go only to the user-configured PR0XTEUS_URL. Traffic sent through an allocated SOCKS5 URL exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs. pkg/client's preflight check additionally makes direct, unproxied calls to api.ipify.org and ifconfig.me to confirm the exit IP actually changed. Setup time (references/setup.md) also reaches raw.githubusercontent.com for the installer and Docker Hub for the pinned image."
+  network: "Runtime control-API calls go only to the user-configured PR0XTEUS_URL. Traffic sent through allocated SOCKS5 or HTTP URLs exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs. pkg/client's preflight check additionally makes direct, unproxied calls to api.ipify.org and ifconfig.me to confirm the exit IP actually changed. Setup time (references/setup.md) also reaches raw.githubusercontent.com for the installer and Docker Hub for the pinned image."
   shell: "bash, curl, jq, and explicit Docker commands from references/setup.md for user-requested setup or verification."
   filesystem: "Normal use reads PR0XTEUS_URL and PR0XTEUS_API_TOKEN from the environment. Operator setup writes only gitignored local WireGuard, pool, routing, token, and .env files."
 ---
 
 # pr0xteus
 
-pr0xteus is the not-an-open-proxy bit between a trusted service and a
-WireGuard-backed SOCKS5 exit. The operator owns the local pool policy. Callers
+pr0xteus is the not-an-open-proxy bit between a trusted service and
+WireGuard-backed SOCKS5 and HTTP exits. The operator owns the local pool policy. Callers
 can ask for an approved country or pool; they cannot smuggle Docker flags,
 host paths, images, or arbitrary provider configs into the daemon.
 
-For the actual setup — local config, a complete pool example, and proof that a
-controller-fronted SOCKS5 exit works — read
+For the actual setup, local config, a complete pool example, and proof that a
+controller-fronted proxy exit works, read
 [references/setup.md](references/setup.md) before touching the stack.
 
 ## Security and safety
@@ -34,21 +34,21 @@ controller-fronted SOCKS5 exit works — read
 - Allocating a proxy starts or reuses a configured WireGuard cell. It can spend
   provider capacity and sends later traffic through the operator's exit, so
   only request the country, pool, and task the user actually named.
-- A returned `socks5://` URL is a short-lived bearer capability for the
-  controller's SOCKS gateway. Keep it out of logs, issue trackers, and public
-  services. Trusted host and container clients can use it directly; only the
-  controller talks to the selected cell's private address.
+- Returned `socks5://` and `http://` URLs are short-lived bearer capabilities
+  for the controller's proxy gateways. Keep them out of logs, issue trackers,
+  and public services. Trusted host and container clients can use either; only
+  the controller talks to the selected cell's private address.
 - pr0xteus has no MCP endpoint. This is a documentation skill, not a fake
   bridge plugin with invented tools.
 
 ## Use it for
 
-- Giving a trusted workload a configured country-specific SOCKS5 exit.
+- Giving a trusted workload configured country-specific SOCKS5 or HTTP egress.
 - Checking whether the controller is alive or inspecting configured pools and
   their hot-tunnel state.
-- Replacing a broken SOCKS5 assignment while avoiding the same old cell.
+- Replacing a broken assignment while avoiding the same old cell.
 - Inspecting live cells and their traffic (`/v1/cells`), or destroying one on
-  demand — see [references/setup.md](references/setup.md#cells).
+  demand. See [references/setup.md](references/setup.md#cells).
 - Wiring a Go service through `pkg/client`, with VPN-only traffic by default or
   explicit public-first fallback where that makes sense.
 
@@ -87,10 +87,11 @@ curl --fail-with-body --request POST \
   "$PR0XTEUS_URL/v1/proxies"
 ```
 
-The response contains `url`, `pool`, `exitCountry`, and `expiresAt`. The URL
-works from the host or another reachable trusted client: it authenticates to
-the controller, which forwards to the chosen cell without resolving the
-destination itself. The setup reference shows a direct `curl --proxy` proof.
+The response contains `proxies.socks5`, `proxies.http`, `pool`, `exitCountry`,
+and `expiresAt`. Both URLs share one lease and work from the host or another
+reachable trusted client. They authenticate to the controller, which forwards
+to the chosen cell without resolving the destination itself. The setup
+reference shows a direct `curl --proxy` proof.
 
 Inspect active exits without creating another lease:
 

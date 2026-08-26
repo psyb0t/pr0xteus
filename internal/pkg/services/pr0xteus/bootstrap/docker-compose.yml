@@ -87,6 +87,8 @@ services:
       TUNNEL_POOL_METRICS_ADDR: 0.0.0.0:9091
       TUNNEL_POOL_SOCKS_ADDR: 0.0.0.0:1080
       TUNNEL_POOL_SOCKS_PUBLIC_ADDR: ${PR0XTEUS_SOCKS_PUBLIC_ADDRESS:-127.0.0.1:1080}
+      TUNNEL_POOL_HTTP_PROXY_ADDR: 0.0.0.0:8080
+      TUNNEL_POOL_HTTP_PROXY_PUBLIC_ADDR: ${PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS:-127.0.0.1:8080}
       TUNNEL_POOL_BUNDLE_DIR: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/secrets/wireguard
       TUNNEL_POOL_POOLS_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/secrets/pools.yaml
       TUNNEL_POOL_ROUTING_FILE: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}/config/egress-routing.yaml
@@ -97,6 +99,7 @@ services:
       - "${PR0XTEUS_HTTP_HOST_PORT:-127.0.0.1:8000}:8000"
       - "${PR0XTEUS_METRICS_HOST_PORT:-127.0.0.1:9091}:9091"
       - "${PR0XTEUS_SOCKS_HOST_PORT:-127.0.0.1:1080}:1080"
+      - "${PR0XTEUS_HTTP_PROXY_HOST_PORT:-127.0.0.1:8080}:8080"
     volumes:
       - type: bind
         source: ${PR0XTEUS_CONFIG_DIR:?run pr0xteus setup first}

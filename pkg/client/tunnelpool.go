@@ -15,8 +15,9 @@ import (
 
 // TunnelPoolClient is a PoolService implementation for pr0xteus's private,
 // versioned HTTP API. Consumers create one at boot and reuse it for the
-// lifetime of the service; only traffic sent to the returned SOCKS5 URL uses
-// the selected egress tunnel.
+// lifetime of the service. It selects the SOCKS5 member of each returned
+// lease; callers that need the standard HTTP proxy use the control API shape
+// directly.
 type TunnelPoolClient struct {
 	baseURL     string
 	poolID      string
@@ -88,10 +89,16 @@ func (c *TunnelPoolClient) ProxyForCountry(
 // tunnelPoolWireResponse is the JSON shape pr0xteus emits.
 // Internal-only — the public ProxyResponse lives in pool.go.
 type tunnelPoolWireResponse struct {
-	URL         string `json:"url"`
-	Pool        string `json:"pool"`
-	ExitCountry string `json:"exitCountry"`
-	ExitIP      string `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism.
+	Proxies     tunnelPoolWireURLs `json:"proxies"`
+	Pool        string             `json:"pool"`
+	ExitCountry string             `json:"exitCountry"`
+	// ExitIP keeps the published API's IP initialism.
+	ExitIP string `json:"exitIP,omitempty"` //nolint:tagliatelle
+}
+
+type tunnelPoolWireURLs struct {
+	SOCKS5 string `json:"socks5"`
+	HTTP   string `json:"http"`
 }
 
 type tunnelPoolWireRequest struct {
@@ -231,8 +238,8 @@ func isPoolExhaustedResponse(statusCode int, body []byte) bool {
 	return envelope.Code == aichteeteapee.ErrorCodeServiceUnavailable
 }
 
-// parseTunnelPoolResponse decodes the wire JSON + lifts URL + Pool
-// + ExitCountry into ProxyResponse.
+// parseTunnelPoolResponse decodes the wire JSON and selects the SOCKS5 lease
+// URL for the established Go client interface.
 func parseTunnelPoolResponse(body []byte) (*ProxyResponse, error) {
 	var raw tunnelPoolWireResponse
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -242,18 +249,18 @@ func parseTunnelPoolResponse(body []byte) (*ProxyResponse, error) {
 		)
 	}
 
-	if raw.URL == "" {
+	if raw.Proxies.SOCKS5 == "" {
 		return nil, ctxerrors.Wrap(
 			ErrEgressUnavailable,
-			"pr0xteus returned empty proxy URL",
+			"pr0xteus returned empty SOCKS5 proxy URL",
 		)
 	}
 
-	proxyURL, err := url.Parse(raw.URL)
+	proxyURL, err := url.Parse(raw.Proxies.SOCKS5)
 	if err != nil {
 		return nil, ctxerrors.Wrap(
 			ErrEgressUnavailable,
-			"parse proxy URL "+raw.URL+": "+err.Error(),
+			"parse SOCKS5 proxy URL "+raw.Proxies.SOCKS5+": "+err.Error(),
 		)
 	}
 

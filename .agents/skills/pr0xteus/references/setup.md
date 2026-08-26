@@ -1,8 +1,8 @@
 # pr0xteus setup
 
-Pr0xteus is private egress plumbing. A trusted client receives a SOCKS5 URL
-only after the controller has started a WireGuard-backed cell and seen a
-handshake. It is not an internet-facing proxy. Keep the controller on loopback,
+Pr0xteus is private egress plumbing. A trusted client receives SOCKS5 and HTTP
+proxy URLs only after the controller has started a WireGuard-backed cell and
+confirmed a handshake. It is not an internet-facing proxy. Keep the controller on loopback,
 remove host bindings for an authenticated private-network gateway, or
 deliberately configure another protected bind address. Use WireGuard material
 you are allowed to use.
@@ -151,12 +151,14 @@ allocation="$(
     --data '{"country":"US"}' \
     http://127.0.0.1:8000/v1/proxies
 )"
-proxy_url="$(jq -er '.url' <<<"$allocation")"
+socks5_proxy="$(jq -er '.proxies.socks5' <<<"$allocation")"
+http_proxy="$(jq -er '.proxies.http' <<<"$allocation")"
 ```
 
-The returned URL is a short-lived credential for the controller SOCKS gateway.
-Use it directly from the host; the controller forwards it to the selected cell
-over the internal network and the cell owns WireGuard egress. To inspect active
+The returned URLs are short-lived credentials for the controller SOCKS5 gateway
+and HTTP proxy. Use either directly from the host; the controller forwards them
+to the selected cell over the internal network, and the cell owns WireGuard
+egress. To inspect active
 exits without making another allocation:
 
 ```bash
@@ -168,9 +170,12 @@ Use the allocated URL for real traffic:
 
 ```bash
 curl --fail --silent --show-error \
-  --proxy "$proxy_url" https://api.ipify.org
+  --proxy "$socks5_proxy" https://api.ipify.org
 
-unset token proxy_url allocation
+curl --fail --silent --show-error \
+  --proxy "$http_proxy" https://api.ipify.org
+
+unset token socks5_proxy http_proxy allocation
 unset -a auth_header
 ```
 

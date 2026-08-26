@@ -1,12 +1,15 @@
 package cellproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,12 +105,33 @@ func TestServer_ControlMuxServesHealthAndStatus(t *testing.T) {
 	assert.Equal(t, "ctrl-y", status.ParentID)
 }
 
-func TestSocksLogger_DoesNotPanic(t *testing.T) {
-	t.Parallel()
+func TestSocksLogger_LogsSafeClassifiedFailures(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(
+		&output,
+		&slog.HandlerOptions{Level: slog.LevelDebug},
+	)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
-	assert.NotPanics(t, func() {
-		socksLogger{}.Errorf("connect failed: %d", 1)
-	})
+	logger := newSocksLogger(context.Background())
+	logger.Errorf("server: %v", io.EOF)
+	logger.Errorf("server: connect to %s failed", "secret-destination.example")
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	require.Len(t, lines, 2)
+
+	var disconnectedRecord map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &disconnectedRecord))
+	assert.Equal(t, "DEBUG", disconnectedRecord["level"])
+	assert.Equal(t, string(socks5FailureClientDisconnected), disconnectedRecord["reason"])
+
+	var failedRecord map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &failedRecord))
+	assert.Equal(t, "WARN", failedRecord["level"])
+	assert.Equal(t, "cell SOCKS5 request failed", failedRecord["msg"])
+	assert.Equal(t, string(socks5FailureUpstreamConnect), failedRecord["reason"])
+	assert.NotContains(t, output.String(), "secret-destination.example")
 }
 
 // TestServer_EndToEndProxiesAndRecords drives the whole proxy in-process: a real

@@ -155,9 +155,16 @@ type TunnelView struct {
 	IdleSeconds float64 `json:"idleSeconds"`
 }
 
+// ProxyURLs is the pair of controller-fronted URLs issued for one lease.
+// They share credentials, expiry, and the selected WireGuard cell.
+type ProxyURLs struct {
+	SOCKS5 string `json:"socks5"`
+	HTTP   string `json:"http"`
+}
+
 // ProxyResponse is the JSON returned by POST /v1/proxies.
 type ProxyResponse struct {
-	URL         string    `json:"url"`
+	Proxies     ProxyURLs `json:"proxies"`
 	Pool        string    `json:"pool"`
 	ExitCountry string    `json:"exitCountry"`
 	ExitIP      string    `json:"exitIP,omitempty"` //nolint:tagliatelle // API contract preserves the IP initialism

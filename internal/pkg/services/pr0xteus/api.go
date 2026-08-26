@@ -72,8 +72,8 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ProxyRequest is the public request payload for POST /v1/proxies. Specify
-// exactly one of country or pool. excludeProxy is a prior SOCKS5 URL that the
-// manager must avoid when selecting a replacement.
+// exactly one of country or pool. excludeProxy is a prior SOCKS5 lease URL
+// that the manager must avoid when selecting a replacement.
 type ProxyRequest struct {
 	Country      string `json:"country,omitempty"`
 	Pool         string `json:"pool,omitempty"`
@@ -81,9 +81,9 @@ type ProxyRequest struct {
 	FallbackOK   bool   `json:"fallbackOk,omitempty"`
 }
 
-// handleProxy assigns a live SOCKS5 URL from a country-routed or explicit
-// pool. A body rather than query parameters keeps retry metadata out of URLs
-// and gives the contract one strict, versioned shape.
+// handleProxy assigns live SOCKS5 and HTTP URLs from a country-routed or
+// explicit pool. A body rather than query parameters keeps retry metadata out
+// of URLs and gives the contract one strict, versioned shape.
 func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 	request, ok := decodeProxyRequest(w, r)
 	if !ok {
@@ -114,7 +114,7 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ProxyResponse{
-		URL:         lease.URL,
+		Proxies:     lease.Proxies,
 		Pool:        acq.Pool,
 		ExitCountry: acq.Tunnel.ExitCountry,
 		ExitIP:      acq.Tunnel.ExitIP,
@@ -130,7 +130,7 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 	aichteeteapee.WriteJSON(w, http.StatusOK, response)
 	TunnelAcquireTotal.WithLabelValues(acq.Pool, metricOutcomeOK).Inc()
 
-	// The manager tracks selection only, not downstream SOCKS5 session lifetime.
+	// The manager tracks selection only, not downstream proxy session lifetime.
 	// LastUsedAt keeps a just-returned tunnel warm for the configured idle window.
 	s.mgr.Release(acq)
 }

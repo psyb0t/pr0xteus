@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/psyb0t/ctxerrors"
@@ -75,7 +76,7 @@ func New(cfg Config) *Server {
 
 	server.socks = socks5.NewServer(
 		socks5.WithDial(server.dial(dialer)),
-		socks5.WithLogger(socksLogger{}),
+		socks5.WithLogger(newSocksLogger(context.Background())),
 	)
 
 	return server
@@ -209,11 +210,48 @@ func (s *Server) controlMux() *http.ServeMux {
 	return mux
 }
 
-// socksLogger adapts go-socks5's Logger to slog. The library gives no context,
-// so this leaf process logs via the configured default handler, keeping the
-// format template and its args as structured fields rather than interpolating.
-type socksLogger struct{}
+// socksLogger adapts go-socks5's Logger without exposing client-supplied data.
+type socksLogger struct {
+	log func(socks5FailureReason)
+}
 
-func (socksLogger) Errorf(format string, args ...any) {
-	slog.Error("socks5 error", "template", format, "args", args)
+func (l socksLogger) Errorf(format string, args ...any) {
+	l.log(classifySOCKS5Failure(format, args...))
+}
+
+func newSocksLogger(ctx context.Context) socksLogger {
+	return socksLogger{log: func(reason socks5FailureReason) {
+		logger := ctxscope.GetLogger(ctx)
+		if reason == socks5FailureClientDisconnected {
+			logger.Debug("cell SOCKS5 client disconnected", "reason", reason)
+
+			return
+		}
+
+		logger.Warn("cell SOCKS5 request failed", "reason", reason)
+	}}
+}
+
+const (
+	socks5FailureAuthenticationFailed socks5FailureReason = "authentication_failed"
+	socks5FailureClientDisconnected   socks5FailureReason = "client_disconnected"
+	socks5FailureProtocolError        socks5FailureReason = "protocol_error"
+	socks5FailureUpstreamConnect      socks5FailureReason = "upstream_connect_failed"
+)
+
+type socks5FailureReason string
+
+func classifySOCKS5Failure(format string, args ...any) socks5FailureReason {
+	message := fmt.Sprintf(format, args...)
+
+	switch {
+	case strings.Contains(message, "EOF"):
+		return socks5FailureClientDisconnected
+	case strings.Contains(message, "failed to authenticate"):
+		return socks5FailureAuthenticationFailed
+	case strings.Contains(message, "connect to"):
+		return socks5FailureUpstreamConnect
+	default:
+		return socks5FailureProtocolError
+	}
 }

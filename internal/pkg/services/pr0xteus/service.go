@@ -27,12 +27,13 @@ const (
 // (separate port to keep the scrape surface internal) + the reaper.
 // Lifecycle: New() → Run(ctx) blocks; Stop(ctx) drains.
 type Service struct {
-	cfg      Config
-	apiToken []byte
-	mgr      *Manager
-	spawner  Spawner
-	reaper   *Reaper
-	gateway  *ProxyGateway
+	cfg       Config
+	apiToken  []byte
+	mgr       *Manager
+	spawner   Spawner
+	reaper    *Reaper
+	gateway   *ProxyGateway
+	httpProxy *HTTPProxyGateway
 
 	apiSrv     *serbewr.Server
 	metricsSrv *http.Server
@@ -72,12 +73,13 @@ func New() (*Service, error) {
 	mgr := NewManager(cfg, specs, router, spawner)
 
 	return &Service{
-		cfg:      cfg,
-		apiToken: apiToken,
-		mgr:      mgr,
-		spawner:  spawner,
-		reaper:   NewReaper(cfg, mgr, spawner, nil),
-		gateway:  NewProxyGateway(mgr, cfg.socksListenAddr()),
+		cfg:       cfg,
+		apiToken:  apiToken,
+		mgr:       mgr,
+		spawner:   spawner,
+		reaper:    NewReaper(cfg, mgr, spawner, nil),
+		gateway:   NewProxyGateway(mgr, cfg.socksListenAddr()),
+		httpProxy: NewHTTPProxyGateway(mgr, cfg.httpProxyListenAddr()),
 	}, nil
 }
 
@@ -95,6 +97,7 @@ func (s *Service) Run(ctx context.Context) error {
 		"http_addr", s.cfg.HTTPAddr,
 		"metrics_addr", s.cfg.MetricsAddr,
 		"socks_addr", s.cfg.socksListenAddr(),
+		"http_proxy_addr", s.cfg.httpProxyListenAddr(),
 		"pools_file", s.cfg.PoolsFile,
 		"bundle_dir", s.cfg.BundleDir,
 		"default_pool", s.cfg.DefaultPool,
@@ -116,10 +119,14 @@ func (s *Service) Run(ctx context.Context) error {
 
 	s.reaper.Start(ctx)
 
-	s.httpErr = make(chan error, 3) //nolint:mnd // api + metrics + SOCKS gateway
+	s.httpErr = make(chan error, 4) //nolint:mnd // api + metrics + SOCKS + HTTP proxy
 
 	if err := s.startGateway(ctx); err != nil {
 		return ctxerrors.Wrap(err, "start SOCKS gateway")
+	}
+
+	if err := s.startHTTPProxy(ctx); err != nil {
+		return ctxerrors.Wrap(err, "start HTTP proxy")
 	}
 
 	if err := s.startAPI(ctx); err != nil {
@@ -143,38 +150,12 @@ func (s *Service) Run(ctx context.Context) error {
 // Stop drains the HTTP servers and reaper, then removes this controller's
 // tracked cells without touching any other controller's scope.
 func (s *Service) Stop(ctx context.Context) error {
-	logger := ctxscope.GetLogger(ctx)
-	logger.Info("stopping pr0xteus")
+	ctxscope.GetLogger(ctx).Info("stopping pr0xteus")
 
-	if s.apiSrv != nil {
-		shutdownCtx, cancel := context.WithTimeout(
-			ctx, httpShutdownTimeout,
-		)
-
-		if err := s.apiSrv.Stop(shutdownCtx); err != nil {
-			logger.Warn("api server shutdown incomplete", "err", err)
-		}
-
-		cancel()
-	}
-
-	if s.metricsSrv != nil {
-		shutdownCtx, cancel := context.WithTimeout(
-			ctx, httpShutdownTimeout,
-		)
-
-		if err := s.metricsSrv.Shutdown(shutdownCtx); err != nil {
-			logger.Warn("metrics server shutdown incomplete", "err", err)
-		}
-
-		cancel()
-	}
-
-	if s.gateway != nil {
-		if err := s.gateway.Close(); err != nil {
-			logger.Warn("SOCKS gateway shutdown incomplete", "err", err)
-		}
-	}
+	s.stopAPI(ctx)
+	s.stopMetrics(ctx)
+	s.stopSOCKSGateway(ctx)
+	s.stopHTTPProxy(ctx)
 
 	if s.reaper != nil {
 		s.reaper.Shutdown()
@@ -187,12 +168,74 @@ func (s *Service) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) stopAPI(ctx context.Context) {
+	if s.apiSrv == nil {
+		return
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(ctx, httpShutdownTimeout)
+	defer cancel()
+
+	if err := s.apiSrv.Stop(shutdownCtx); err != nil {
+		ctxscope.GetLogger(ctx).Warn("api server shutdown incomplete", "err", err)
+	}
+}
+
+func (s *Service) stopMetrics(ctx context.Context) {
+	if s.metricsSrv == nil {
+		return
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(ctx, httpShutdownTimeout)
+	defer cancel()
+
+	if err := s.metricsSrv.Shutdown(shutdownCtx); err != nil {
+		ctxscope.GetLogger(ctx).Warn("metrics server shutdown incomplete", "err", err)
+	}
+}
+
+func (s *Service) stopSOCKSGateway(ctx context.Context) {
+	if s.gateway == nil {
+		return
+	}
+
+	if err := s.gateway.Close(); err != nil {
+		ctxscope.GetLogger(ctx).Warn("SOCKS gateway shutdown incomplete", "err", err)
+	}
+}
+
+func (s *Service) stopHTTPProxy(ctx context.Context) {
+	if s.httpProxy == nil {
+		return
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(ctx, httpShutdownTimeout)
+	defer cancel()
+
+	if err := s.httpProxy.Close(shutdownCtx); err != nil {
+		ctxscope.GetLogger(ctx).Warn("HTTP proxy shutdown incomplete", "err", err)
+	}
+}
+
 func (s *Service) startGateway(ctx context.Context) error {
 	if err := s.gateway.Start(ctx, s.httpErr); err != nil {
 		return err
 	}
 
 	ctxscope.GetLogger(ctx).Info("pr0xteus SOCKS gateway listening", "addr", s.cfg.socksListenAddr())
+
+	return nil
+}
+
+func (s *Service) startHTTPProxy(ctx context.Context) error {
+	if err := s.httpProxy.Start(ctx, s.httpErr); err != nil {
+		return err
+	}
+
+	ctxscope.GetLogger(ctx).Info(
+		"pr0xteus HTTP proxy listening",
+		"addr", s.cfg.httpProxyListenAddr(),
+	)
 
 	return nil
 }

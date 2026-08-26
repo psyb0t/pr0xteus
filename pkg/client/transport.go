@@ -22,8 +22,8 @@ const (
 )
 
 // buildTransport returns an *http.Transport that routes every dial
-// through the given SOCKS5 proxy. pr0xteus only emits SOCKS5 URLs,
-// so this is the production path.
+// through the given SOCKS5 proxy. The public client deliberately selects the
+// SOCKS5 member from pr0xteus's dual-proxy lease response.
 //
 // freshTCP=true disables connection reuse on this Transport (used
 // by retry attempt 2 to force a brand-new TCP).

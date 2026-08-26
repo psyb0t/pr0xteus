@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.11.0 - 2026-08-26
+
+**Breaking before 1.0:** `POST /v1/proxies` no longer returns a top-level
+`url`. Read `proxies.socks5` instead. The response now also includes
+`proxies.http`, an authenticated HTTP forward-proxy URL for the same lease,
+cell, credentials, expiry, and egress IP.
+
+- Added the controller HTTP proxy on port 8080. It supports HTTP requests and
+  HTTPS `CONNECT` tunnels, with all traffic routed through the selected cell.
+  It strips proxy credentials and hop-by-hop headers before forwarding.
+- Fixed the controller SOCKS relay so domain-form requests retain their target
+  hostname instead of being forwarded as `0.0.0.0`. Failures now produce safe,
+  structured logs without exposing lease credentials or destinations.
+- Added HTTP proxy host-port and public-address settings, including Tailscale
+  Serve wiring. The default remains loopback-only at `127.0.0.1:8080`.
+- Expanded control API, real-provider, installed-stack, proxy protocol, and
+  configuration tests. The 90% coverage gate now includes the HTTP proxy.
+- Removed stale comments from the pipeline configuration.
+
 ## v0.10.6 — 2026-08-21
 
 Updates the Servicepack framework to v1.9.2 and drops the removed `make audit`

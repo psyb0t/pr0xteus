@@ -13,7 +13,7 @@ func TestLeaseRegistry_IssueLookupAndExpiry(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.August, 16, 22, 0, 0, 0, time.UTC)
-	registry := newLeaseRegistry("127.0.0.1:1080", time.Minute)
+	registry := newLeaseRegistry("127.0.0.1:1080", "127.0.0.1:8080", time.Minute)
 	registry.now = func() time.Time { return now }
 	internalURL, err := url.Parse("socks5://cell-private:1080")
 	require.NoError(t, err)
@@ -29,12 +29,20 @@ func TestLeaseRegistry_IssueLookupAndExpiry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, now.Add(time.Minute), lease.ExpiresAt)
 
-	issuedURL, err := url.Parse(lease.URL)
+	issuedURL, err := url.Parse(lease.Proxies.SOCKS5)
 	require.NoError(t, err)
 	assert.Equal(t, proxySchemeSOCKS5, issuedURL.Scheme)
 	assert.Equal(t, "127.0.0.1:1080", issuedURL.Host)
+	httpURL, err := url.Parse(lease.Proxies.HTTP)
+	require.NoError(t, err)
+	assert.Equal(t, proxySchemeHTTP, httpURL.Scheme)
+	assert.Equal(t, "127.0.0.1:8080", httpURL.Host)
+	assert.Equal(t, issuedURL.User.Username(), httpURL.User.Username())
 	password, ok := issuedURL.User.Password()
 	require.True(t, ok)
+	httpPassword, ok := httpURL.User.Password()
+	require.True(t, ok)
+	assert.Equal(t, password, httpPassword)
 
 	record, ok := registry.Lookup(issuedURL.User.Username(), password)
 	require.True(t, ok)
@@ -57,7 +65,7 @@ func TestLeaseRegistry_IssueLookupAndExpiry(t *testing.T) {
 func TestLeaseRegistry_RejectsIncompleteAcquisition(t *testing.T) {
 	t.Parallel()
 
-	registry := newLeaseRegistry("127.0.0.1:1080", time.Minute)
+	registry := newLeaseRegistry("127.0.0.1:1080", "127.0.0.1:8080", time.Minute)
 	internalURL, err := url.Parse("socks5://cell-private:1080")
 	require.NoError(t, err)
 

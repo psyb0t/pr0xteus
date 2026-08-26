@@ -29,6 +29,8 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	assert.Contains(t, string(env), apiTokenEnvName+"=")
 	assert.Contains(t, string(env), "PR0XTEUS_CONTROLLER_IMAGE="+defaultControllerImage)
 	assert.Contains(t, string(env), "PR0XTEUS_TAILSCALE_ENABLED=false")
+	assert.Contains(t, string(env), "PR0XTEUS_HTTP_PROXY_HOST_PORT=127.0.0.1:8080")
+	assert.Contains(t, string(env), "PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS=127.0.0.1:8080")
 	assert.NotContains(t, string(env), "API_TOKEN_FILE")
 	assert.FileExists(t, filepath.Join(configDir, dotEnvExampleFileName))
 
@@ -58,6 +60,7 @@ func TestBootstrapConfigCreatesPrivateOperatorFilesAndPreservesThem(t *testing.T
 	assert.Contains(t, string(composeBefore), "egress-network-anchor")
 	assert.Contains(t, string(composeBefore), "name: pr0xteus-egress")
 	assert.Contains(t, string(hostPortsBefore), "PR0XTEUS_HTTP_HOST_PORT")
+	assert.Contains(t, string(hostPortsBefore), "PR0XTEUS_HTTP_PROXY_HOST_PORT")
 	assert.Contains(t, string(noHostPortsBefore), "ports: !reset []")
 	require.DirExists(t, filepath.Join(configDir, tailscaleStatePath))
 
@@ -396,6 +399,8 @@ func TestRenderEnvFileDevelopmentModeUsesLocalControllerImage(t *testing.T) {
 	assert.Contains(t, env, "PR0XTEUS_CONTROLLER_IMAGE="+developmentControllerImage)
 	assert.Contains(t, env, apiTokenEnvName+"=dev-token")
 	assert.Contains(t, env, "PR0XTEUS_HTTP_HOST_PORT=127.0.0.1:8000")
+	assert.Contains(t, env, "PR0XTEUS_HTTP_PROXY_HOST_PORT=127.0.0.1:8080")
+	assert.Contains(t, env, "PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS=127.0.0.1:8080")
 	assert.Contains(t, env, "PR0XTEUS_DISABLE_HOST_PORTS=false")
 	assert.NotContains(t, env, "ignored/in/dev:mode")
 	assert.NotContains(t, env, "PR0XTEUS_CELL_IMAGE=")

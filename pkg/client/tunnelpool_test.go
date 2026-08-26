@@ -36,7 +36,7 @@ func TestTunnelPoolClient_SendsAuthenticatedCountryRequest(t *testing.T) {
 		assert.Empty(t, request.Pool)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"url":"socks5://cell:1080","pool":"western","exitCountry":"DE","exitIP":"203.0.113.10"}`))
+		_, err := w.Write([]byte(`{"proxies":{"socks5":"socks5://cell:1080","http":"http://cell:8080"},"pool":"western","exitCountry":"DE","exitIP":"203.0.113.10"}`))
 		assert.NoError(t, err)
 	}))
 	t.Cleanup(server.Close)
@@ -61,7 +61,7 @@ func TestTunnelPoolClient_PoolOverrideOmitsCountry(t *testing.T) {
 		assert.Empty(t, request.Country)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"url":"socks5://cell:1080","pool":"western","exitCountry":"DE"}`))
+		_, err := w.Write([]byte(`{"proxies":{"socks5":"socks5://cell:1080","http":"http://cell:8080"},"pool":"western","exitCountry":"DE"}`))
 		assert.NoError(t, err)
 	}))
 	t.Cleanup(server.Close)
@@ -83,13 +83,13 @@ func TestTunnelPoolClient_RejectsInvalidResponses(t *testing.T) {
 		body   string
 	}{
 		{name: "malformed JSON", status: http.StatusOK, body: "{"},
-		{name: "empty URL", status: http.StatusOK, body: `{"pool":"western"}`},
-		{name: "malformed proxy URL", status: http.StatusOK, body: `{"url":"socks5://%zz"}`},
+		{name: "empty SOCKS5 URL", status: http.StatusOK, body: `{"proxies":{},"pool":"western"}`},
+		{name: "malformed SOCKS5 URL", status: http.StatusOK, body: `{"proxies":{"socks5":"socks5://%zz"}}`},
 		{name: "server failure", status: http.StatusServiceUnavailable, body: "unavailable"},
 		{
 			name:   "response exceeds body cap",
 			status: http.StatusOK,
-			body:   `{"url":"socks5://cell:1080","padding":"` + strings.Repeat("x", 1<<16) + `"}`,
+			body:   `{"proxies":{"socks5":"socks5://cell:1080","http":"http://cell:8080"},"padding":"` + strings.Repeat("x", 1<<16) + `"}`,
 		},
 	}
 

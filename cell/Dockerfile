@@ -27,14 +27,12 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 # - bash: entrypoint runs as bash (set -euo pipefail)
 # - bind-tools: dig for hostname → IP resolution at boot (the host
 #   resolver supplies DNS; once WG is up resolv.conf is switched)
-# - netcat-openbsd: TCP liveness probe for the SOCKS5 listener
 RUN apk add --no-cache \
-		bash=5.3.9-r1 \
-		bind-tools=9.20.26-r0 \
-		iproute2=7.0.0-r0 \
-		iptables=1.8.13-r0 \
-		netcat-openbsd=1.234.1-r0 \
-		su-exec=0.3-r0 \
+	bash=5.3.9-r1 \
+	bind-tools=9.20.26-r0 \
+	iproute2=7.0.0-r0 \
+	iptables=1.8.13-r0 \
+	su-exec=0.3-r0 \
         wireguard-tools=1.0.20260223-r0
 
 COPY --from=builder /cellproxy /usr/local/bin/cellproxy
@@ -49,10 +47,9 @@ RUN adduser -D -H -s /sbin/nologin -u 1500 proxyuser
 # SOCKS5 (1080) + the control HTTP server (9090, health + metrics).
 EXPOSE 1080 9090
 
-# Healthcheck: TCP-level handshake on the SOCKS5 port. Note this
-# only proves the daemon is up. The controller additionally scrapes
-# the control server's /healthz and /status.
+# Healthcheck uses cellproxy's HTTP liveness endpoint. A bare TCP probe on the
+# SOCKS5 port would close before protocol negotiation and create a false error.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
-    CMD nc -z 127.0.0.1 1080 || exit 1
+    CMD wget -q -O /dev/null http://127.0.0.1:9090/healthz || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

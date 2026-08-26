@@ -8,7 +8,7 @@ readonly METRICS_URL="${PR0XTEUS_TEST_METRICS_URL:-http://127.0.0.1:9091}"
 readonly TEST_COUNTRY="${PR0XTEUS_REAL_TEST_COUNTRY:-US}"
 readonly PROXY_HOST="${PR0XTEUS_TEST_PROXY_HOST:-}"
 readonly DIRECT_IP="${PR0XTEUS_TEST_DIRECT_IP:-}"
-readonly PUBLIC_IP_ADDRESS="${PR0XTEUS_TEST_PUBLIC_IP_ADDRESS:-}"
+readonly PUBLIC_IP_URL="${PR0XTEUS_TEST_PUBLIC_IP_URL:-https://api.ipify.org}"
 readonly READY_RETRIES=30
 
 trap 'printf "{\"level\":\"ERROR\",\"file\":\"test-installed.sh\",\"line\":%d,\"msg\":\"command failed exit=%d\"}\n" "$LINENO" "$?" >&2' ERR
@@ -61,17 +61,19 @@ main() {
 	curl --fail --silent --show-error --retry "$READY_RETRIES" \
 		--retry-connrefused --retry-delay 1 "$METRICS_URL/healthz" >/dev/null
 	curl --fail --silent --show-error "$METRICS_URL/metrics" >/dev/null
-	local unauthorized_status assignment proxy_url cells direct_ip proxied_ip
+	local unauthorized_status assignment socks5_proxy http_proxy cells direct_ip socks5_ip http_ip
 	unauthorized_status="$(curl --output /dev/null --silent --write-out '%{http_code}' "$BASE_URL/v1/cells")"
 	[[ "$unauthorized_status" == "401" ]] || fail "unauthenticated cells request returned $unauthorized_status"
 
 	assignment="$(request POST "$BASE_URL/v1/proxies" \
 		--header 'Content-Type: application/json' --data "{\"country\":\"$TEST_COUNTRY\"}")"
-	proxy_url="$(jq -er '.url' <<<"$assignment")"
+	socks5_proxy="$(jq -er '.proxies.socks5' <<<"$assignment")"
+	http_proxy="$(jq -er '.proxies.http' <<<"$assignment")"
 	if [[ -n "$PROXY_HOST" ]]; then
-		proxy_url="${proxy_url/@127.0.0.1:/@${PROXY_HOST}:}"
+		socks5_proxy="${socks5_proxy/@127.0.0.1:/@${PROXY_HOST}:}"
+		http_proxy="${http_proxy/@127.0.0.1:/@${PROXY_HOST}:}"
 	fi
-	proxy_url="${proxy_url/socks5:/socks5h:}"
+	socks5_proxy="${socks5_proxy/socks5:/socks5h:}"
 	request GET "$BASE_URL/v1/proxies?limit=1&offset=0" |
 		jq -e '.proxies | type == "array"' >/dev/null
 	request GET "$BASE_URL/v1/pools" | jq -e '.pools | type == "array"' >/dev/null
@@ -82,11 +84,13 @@ main() {
 
 	direct_ip="$DIRECT_IP"
 	[[ -n "$direct_ip" ]] || fail "PR0XTEUS_TEST_DIRECT_IP is empty"
-	[[ -n "$PUBLIC_IP_ADDRESS" ]] || fail "PR0XTEUS_TEST_PUBLIC_IP_ADDRESS is empty"
-	proxied_ip="$(curl --ipv4 --fail --silent --show-error --proxy "$proxy_url" \
-		--header 'Host: api.ipify.org' \
-		"http://$PUBLIC_IP_ADDRESS")"
-	[[ "$direct_ip" != "$proxied_ip" ]] || fail "proxy did not change the public IP"
+	socks5_ip="$(curl --ipv4 --fail --silent --show-error --proxy "$socks5_proxy" \
+		"$PUBLIC_IP_URL")"
+	[[ "$direct_ip" != "$socks5_ip" ]] || fail "SOCKS5 proxy did not change the public IP"
+	http_ip="$(curl --ipv4 --fail --silent --show-error --proxy "$http_proxy" \
+		"$PUBLIC_IP_URL")"
+	[[ "$direct_ip" != "$http_ip" ]] || fail "HTTP proxy did not change the public IP"
+	[[ "$socks5_ip" == "$http_ip" ]] || fail "returned proxy URLs used different exits"
 
 	request DELETE "$BASE_URL/v1/cells/$container_id" >/dev/null
 	container_id=""

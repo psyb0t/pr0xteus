@@ -1,8 +1,9 @@
-# Complete image-first setup and a real SOCKS5 proof
+# Complete image-first setup and real proxy proofs
 
 This is the operator path: install the published image, add your own authorized
-WireGuard configuration, start the private stack, then allocate one SOCKS5
-exit. You need Linux and Docker; `docker compose` is already part of Docker.
+WireGuard configuration, start the private stack, then allocate one lease with
+both proxy URLs. You need Linux and Docker; `docker compose` is already part
+of Docker.
 pr0xteus does not create a VPN account or fetch provider configuration for you.
 
 For component detail, see [architecture.md](architecture.md),
@@ -86,7 +87,7 @@ images or starts anything. `pr0xteus status`, `pr0xteus logs --follow`,
 The controller API is `127.0.0.1:8000`; metrics and health are
 `127.0.0.1:9091`. Cells have no host port. They join the private egress network
 and the controller-only cell-control network; callers use the controller's
-SOCKS gateway instead of joining either one. `/healthz` says the controller is
+SOCKS5 or HTTP proxy instead of joining either one. `/healthz` says the controller is
 alive; it does not prove that a provider tunnel can be allocated right now.
 
 ### Optional: put the API on your tailnet
@@ -106,12 +107,13 @@ pr0xteus start
 ```
 
 The optional sidecar gets its own tailnet identity and serves the controller
-API on port 80, private metrics on port 9091, and the controller SOCKS gateway
-on port 1080 through Tailscale Serve. This makes the hop entirely internal to
-Docker: the controller, metrics, and SOCKS ports are not bound on the host. The bearer token below is still
+API on port 80, private metrics on port 9091, the controller SOCKS5 gateway on
+port 1080, and the HTTP proxy on port 8080 through Tailscale Serve. This makes
+the hop entirely internal to Docker: the controller, metrics, and proxy ports
+are not bound on the host. The bearer token below is still
 required. Its identity survives restarts in `~/.config/pr0xteus/tailscale/state`.
-Use the tailnet URL for API calls in this mode; the wrapper also returns a
-SOCKS URL using that MagicDNS host. The loopback examples below apply to the
+Use the tailnet URL for API calls in this mode; the wrapper also returns proxy
+URLs using that MagicDNS host. The loopback examples below apply to the
 default `PR0XTEUS_DISABLE_HOST_PORTS=false` deployment.
 Keep tailnet access to port 9091 restricted because its health and Prometheus
 endpoints do not require authentication.
@@ -119,8 +121,8 @@ endpoints do not require authentication.
 ## 4. Allocate one configured exit
 
 Read the token from `.env` without putting it in command history. The returned
-proxy URL is a short-lived credential, so keep it out of logs and do not share
-it:
+proxy URLs are short-lived credentials, so keep them out of logs and do not share
+them:
 
 ```bash
 token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
@@ -133,37 +135,43 @@ allocation="$(
     --data '{"country":"US"}' \
     http://127.0.0.1:8000/v1/proxies
 )"
-proxy_url="$(jq -er '.url' <<<"$allocation")"
-jq '{pool, exitCountry, url}' <<<"$allocation"
+socks5_proxy="$(jq -er '.proxies.socks5' <<<"$allocation")"
+http_proxy="$(jq -er '.proxies.http' <<<"$allocation")"
 ```
 
 The response has this shape:
 
 ```json
 {
-  "url": "socks5://lease-id:lease-secret@127.0.0.1:1080",
+  "proxies": {
+    "socks5": "socks5://lease-id:lease-secret@127.0.0.1:1080",
+    "http": "http://lease-id:lease-secret@127.0.0.1:8080"
+  },
   "pool": "us",
   "exitCountry": "US",
   "expiresAt": "2026-01-01T00:15:00Z"
 }
 ```
 
-That URL targets the controller SOCKS gateway. In the default deployment it
-uses the loopback listener, so it is usable from the host shell or another
-trusted client that can reach that listener. With
+Both URLs target the controller and share one lease. In the default deployment
+they use loopback listeners, so they are usable from the host shell or another
+trusted client that can reach them. With
 `PR0XTEUS_DISABLE_HOST_PORTS=true` and the wrapper-managed Tailscale profile,
-the returned URL instead uses the sidecar's MagicDNS host on port 1080 and is
-usable from another tailnet machine. In both cases the controller validates the
-lease credentials, forwards bytes to the selected cell over the internal
+the returned URLs use the sidecar's MagicDNS host on ports 1080 and 8080 and
+are usable from another tailnet machine. In both cases the controller validates
+the lease credentials, forwards traffic to the selected cell over the internal
 control network, and the cell resolves and egresses through WireGuard.
 
 ## 5. Prove traffic uses the WireGuard exit
 
 ```bash
 curl --fail --silent --show-error \
-  --proxy "$proxy_url" https://api.ipify.org
+  --proxy "$socks5_proxy" https://api.ipify.org
 
-unset token proxy_url allocation
+curl --fail --silent --show-error \
+  --proxy "$http_proxy" https://api.ipify.org
+
+unset token socks5_proxy http_proxy allocation
 unset -a auth_header
 ```
 

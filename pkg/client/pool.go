@@ -41,9 +41,9 @@ type ProxyRequest struct {
 	FallbackOK bool
 }
 
-// ProxyResponse is the pool's answer. ProxyURL is the SOCKS5 URL
-// Client dials through. Pool / ExitCountry / ExitIP are telemetry
-// so logs + metrics show which exit the request went through.
+// ProxyResponse is the pool's answer. ProxyURL is the SOCKS5 member of the
+// controller's dual-proxy lease response that Client dials through. Pool,
+// ExitCountry, and ExitIP are telemetry for logs and metrics.
 type ProxyResponse struct {
 	ProxyURL    *url.URL
 	Pool        string // pool name (e.g. "western_eu")

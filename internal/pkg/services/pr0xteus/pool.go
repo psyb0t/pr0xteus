@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2" // nosemgrep
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/psyb0t/ctxerrors"
 	"github.com/psyb0t/ctxscope"
+	"golang.org/x/net/proxy"
 	"gopkg.in/yaml.v3"
 )
 
@@ -514,7 +516,9 @@ func NewManager(
 		control: cellControlClient{
 			http: &http.Client{Timeout: cellControlTimeout},
 		},
-		leases:  newLeaseRegistry(cfg.socksPublicAddr(), cfg.proxyLeaseTTL()),
+		leases: newLeaseRegistry(
+			cfg.socksPublicAddr(), cfg.httpProxyPublicAddr(), cfg.proxyLeaseTTL(),
+		),
 		spawnMu: make(map[string]*sync.Mutex),
 	}
 }
@@ -759,8 +763,8 @@ func (m *Manager) Release(acq Acquisition) {
 	state.release()
 }
 
-// IssueLease turns an acquired cell into a short-lived controller-fronted
-// SOCKS5 URL and records it as the pool's latest allocation.
+// IssueLease turns an acquired cell into short-lived controller-fronted SOCKS5
+// and HTTP proxy URLs, then records the SOCKS5 URL as the pool's latest lease.
 func (m *Manager) IssueLease(acq Acquisition) (ProxyLease, error) {
 	lease, err := m.leases.Issue(acq)
 	if err != nil {
@@ -772,7 +776,7 @@ func (m *Manager) IssueLease(acq Acquisition) (ProxyLease, error) {
 		return ProxyLease{}, ctxerrors.Wrapf(ErrUnknownPool, "%q", acq.Pool)
 	}
 
-	state.setLastURL(acq.Tunnel.ContainerID, lease.URL, lease.ExpiresAt)
+	state.setLastURL(acq.Tunnel.ContainerID, lease.Proxies.SOCKS5, lease.ExpiresAt)
 
 	return lease, nil
 }
@@ -804,8 +808,8 @@ func (m *Manager) ResolveExcludedProxy(raw string) (*url.URL, error) {
 	return lease.InternalURL, nil
 }
 
-// AcquireForLease validates a SOCKS5 lease and reserves its exact live cell
-// until the returned acquisition is released when the proxied connection ends.
+// AcquireForLease validates a lease and reserves its exact live cell until the
+// returned acquisition is released when the proxied connection ends.
 func (m *Manager) AcquireForLease(username, password string) (Acquisition, error) {
 	lease, ok := m.leases.Lookup(username, password)
 	if !ok {
@@ -823,6 +827,62 @@ func (m *Manager) AcquireForLease(username, password string) (Acquisition, error
 	}
 
 	return Acquisition{Tunnel: tunnel, Pool: lease.Pool}, nil
+}
+
+// validLease reports whether credentials identify a live, unexpired lease.
+// It never reserves a cell; each proxied connection does that in dialLease.
+func (m *Manager) validLease(username, password string) bool {
+	_, ok := m.leases.Lookup(username, password)
+
+	return ok
+}
+
+// dialLease reserves the lease's exact cell for one connection and releases
+// the reservation when that connection closes. Both public proxy protocols use
+// this path so a lease cannot select a different cell by protocol.
+func (m *Manager) dialLease(
+	ctx context.Context, username, password, network, address string,
+) (net.Conn, error) {
+	acquisition, err := m.AcquireForLease(username, password)
+	if err != nil {
+		return nil, ctxerrors.Wrap(err, "acquire cell for proxy lease")
+	}
+
+	dialContext, cancel := context.WithTimeout(ctx, proxyRelayDialTimeout)
+	defer cancel()
+
+	upstream, err := proxy.SOCKS5(
+		network,
+		acquisition.Tunnel.GatewayAddr,
+		nil,
+		&net.Dialer{Timeout: proxyRelayDialTimeout},
+	)
+	if err != nil {
+		m.Release(acquisition)
+
+		return nil, ctxerrors.Wrap(err, "create cell SOCKS5 dialer")
+	}
+
+	contextDialer, ok := upstream.(proxy.ContextDialer)
+	if !ok {
+		m.Release(acquisition)
+
+		return nil, ctxerrors.New("cell SOCKS5 dialer lacks context support")
+	}
+
+	connection, err := contextDialer.DialContext(dialContext, network, address)
+	if err != nil {
+		m.Release(acquisition)
+
+		return nil, ctxerrors.Wrap(err, "dial destination through cell SOCKS5 proxy")
+	}
+
+	return &releaseConn{
+		Conn: connection,
+		release: func() {
+			m.Release(acquisition)
+		},
+	}, nil
 }
 
 // Close kills only the cells currently tracked by this manager. It is used on

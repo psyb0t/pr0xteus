@@ -14,7 +14,7 @@ import (
 
 const proxyRequestTimeout = 3 * time.Minute
 
-func TestControlAPI_AllocatesLiveWireGuardSOCKS5Proxy(t *testing.T) {
+func TestControlAPI_AllocatesLiveWireGuardProxyLease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), proxyRequestTimeout)
 	t.Cleanup(cancel)
 
@@ -23,13 +23,26 @@ func TestControlAPI_AllocatesLiveWireGuardSOCKS5Proxy(t *testing.T) {
 	require.Equal(t, "integration", assignment.Pool)
 	require.Equal(t, "ZZ", assignment.ExitCountry)
 
-	proxyURL, err := url.Parse(assignment.URL)
+	socksURL, err := url.Parse(assignment.Proxies.SOCKS5)
 	require.NoError(t, err)
-	require.Equal(t, "socks5", proxyURL.Scheme)
-	require.NotEmpty(t, proxyURL.Host)
-	require.NotNil(t, proxyURL.User)
+	require.Equal(t, "socks5", socksURL.Scheme)
+	require.NotEmpty(t, socksURL.Host)
+	require.NotNil(t, socksURL.User)
 
-	require.NoError(t, infra.AssertProxyEgress(ctx, assignment.URL))
+	httpURL, err := url.Parse(assignment.Proxies.HTTP)
+	require.NoError(t, err)
+	require.Equal(t, "http", httpURL.Scheme)
+	require.NotEmpty(t, httpURL.Host)
+	require.NotNil(t, httpURL.User)
+	require.Equal(t, socksURL.User.Username(), httpURL.User.Username())
+	socksPassword, ok := socksURL.User.Password()
+	require.True(t, ok)
+	httpPassword, ok := httpURL.User.Password()
+	require.True(t, ok)
+	require.Equal(t, socksPassword, httpPassword)
+
+	require.NoError(t, infra.AssertProxyEgress(ctx, assignment.Proxies.SOCKS5))
+	require.NoError(t, infra.AssertProxyEgress(ctx, assignment.Proxies.HTTP))
 
 	// GET /v1/pools — the operator pool view lists the configured pool.
 	poolNames, err := infra.PoolNames(ctx)

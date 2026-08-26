@@ -18,9 +18,11 @@ const (
 	cellImageRepo    = "psyb0t/pr0xteus"
 	defaultCellTag   = "dev"
 
-	defaultSOCKSListenAddr = ":1080"
-	defaultSOCKSPublicAddr = "127.0.0.1:1080"
-	defaultProxyLeaseTTL   = 15 * time.Minute
+	defaultSOCKSListenAddr     = ":1080"
+	defaultSOCKSPublicAddr     = "127.0.0.1:1080"
+	defaultHTTPProxyListenAddr = ":8080"
+	defaultHTTPProxyPublicAddr = "127.0.0.1:8080"
+	defaultProxyLeaseTTL       = 15 * time.Minute
 
 	// minPort/maxPort bound every operator-supplied TCP port.
 	minPort = 1
@@ -85,7 +87,16 @@ type Config struct {
 	// deliberately exposes for SOCKS5 traffic.
 	SOCKSPublicAddr string `default:"127.0.0.1:1080" env:"TUNNEL_POOL_SOCKS_PUBLIC_ADDR"`
 
-	// ProxyLeaseTTL limits how long an allocated SOCKS5 URL can be reused.
+	// HTTPProxyAddr is the controller-fronted HTTP forward-proxy listener. It
+	// uses the same short-lived lease credentials as the SOCKS5 listener and
+	// always dials through the selected cell.
+	HTTPProxyAddr string `default:":8080" env:"TUNNEL_POOL_HTTP_PROXY_ADDR"`
+
+	// HTTPProxyPublicAddr is the address clients receive for the standard HTTP
+	// proxy URL in a lease response.
+	HTTPProxyPublicAddr string `default:"127.0.0.1:8080" env:"TUNNEL_POOL_HTTP_PROXY_PUBLIC_ADDR"`
+
+	// ProxyLeaseTTL limits how long allocated proxy URLs can be reused.
 	ProxyLeaseTTL time.Duration `default:"15m" env:"TUNNEL_POOL_PROXY_LEASE_TTL"`
 
 	// PoolsFile is the ignored, operator-managed pool definition file.
@@ -193,11 +204,7 @@ func LoadConfig() (Config, error) {
 
 // validatePorts checks the in-container cell ports are in range and distinct.
 func (cfg *Config) validatePorts() error {
-	if err := validateTCPAddress(cfg.SOCKSAddr, true, "TUNNEL_POOL_SOCKS_ADDR"); err != nil {
-		return err
-	}
-
-	if err := validateTCPAddress(cfg.SOCKSPublicAddr, false, "TUNNEL_POOL_SOCKS_PUBLIC_ADDR"); err != nil {
+	if err := cfg.validateProxyAddresses(); err != nil {
 		return err
 	}
 
@@ -207,6 +214,30 @@ func (cfg *Config) validatePorts() error {
 		)
 	}
 
+	return cfg.validateCellPorts()
+}
+
+func (cfg *Config) validateProxyAddresses() error {
+	addressChecks := []struct {
+		value        string
+		allowAnyHost bool
+		envName      string
+	}{
+		{cfg.SOCKSAddr, true, "TUNNEL_POOL_SOCKS_ADDR"},
+		{cfg.SOCKSPublicAddr, false, "TUNNEL_POOL_SOCKS_PUBLIC_ADDR"},
+		{cfg.HTTPProxyAddr, true, "TUNNEL_POOL_HTTP_PROXY_ADDR"},
+		{cfg.HTTPProxyPublicAddr, false, "TUNNEL_POOL_HTTP_PROXY_PUBLIC_ADDR"},
+	}
+	for _, check := range addressChecks {
+		if err := validateTCPAddress(check.value, check.allowAnyHost, check.envName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (cfg *Config) validateCellPorts() error {
 	if cfg.CellSocksPort < minPort || cfg.CellSocksPort > maxPort {
 		return ctxerrors.Wrap(
 			ErrConfigInvalid, "PR0XTEUS_CELL_SOCKS_PORT must be in 1..65535",
@@ -261,6 +292,22 @@ func (cfg Config) socksListenAddr() string {
 	}
 
 	return defaultSOCKSListenAddr
+}
+
+func (cfg Config) httpProxyPublicAddr() string {
+	if cfg.HTTPProxyPublicAddr != "" {
+		return cfg.HTTPProxyPublicAddr
+	}
+
+	return defaultHTTPProxyPublicAddr
+}
+
+func (cfg Config) httpProxyListenAddr() string {
+	if cfg.HTTPProxyAddr != "" {
+		return cfg.HTTPProxyAddr
+	}
+
+	return defaultHTTPProxyListenAddr
 }
 
 func (cfg Config) proxyLeaseTTL() time.Duration {

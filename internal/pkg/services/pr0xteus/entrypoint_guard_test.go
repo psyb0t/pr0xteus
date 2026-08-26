@@ -10,7 +10,10 @@ import (
 
 // entrypointScriptPath resolves cell/entrypoint.sh relative to this package
 // (internal/pkg/services/pr0xteus), four directories below the repo root.
-const entrypointScriptPath = "../../../../cell/entrypoint.sh"
+const (
+	entrypointScriptPath = "../../../../cell/entrypoint.sh"
+	cellDockerfilePath   = "../../../../cell/Dockerfile"
+)
 
 // TestCellEntrypoint_DoesNotAcceptInboundFromTheTunnelSide guards against
 // regressing the removed `-A INPUT -i wg0 -j ACCEPT` rule: accepting new
@@ -55,6 +58,18 @@ func TestCellEntrypoint_BindsSOCKS5ToEgressAndControlToControlInterface(t *testi
 		contents,
 		"-A INPUT -i \"${CONTROL_IF}\" \\\n\t-p tcp --dport \"${CONTROL_PORT}\" -j ACCEPT",
 	)
+}
+
+func TestCellDockerfile_HealthcheckUsesControlHealthEndpoint(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(cellDockerfilePath)
+	require.NoError(t, err)
+	contents := string(raw)
+
+	assert.Contains(t, contents, "wget -q -O /dev/null http://127.0.0.1:9090/healthz")
+	assert.NotContains(t, contents, "nc -z 127.0.0.1 1080")
+	assert.NotContains(t, contents, "netcat-openbsd=")
 }
 
 func readEntrypointScript(t *testing.T) string {

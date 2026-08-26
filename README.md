@@ -10,9 +10,9 @@ Your application needs to leave through a VPN, but you do not want to hand it
 a provider account, turn the host into a VPN client, or accidentally run an
 open proxy. pr0xteus is the small private control plane between those things:
 give it WireGuard files you are allowed to use, and trusted host or container
-clients get short-lived SOCKS5 exits from the pools you approve. Every live exit
-is observable — see how many requests and bytes went through each cell and to
-which destinations, and destroy any of them on demand.
+clients get short-lived SOCKS5 and HTTP exits from the pools you approve. Every
+live exit is observable. See how many requests and bytes went through each
+cell and to which destinations, then destroy any of them on demand.
 
 ## Contents
 
@@ -33,9 +33,9 @@ which destinations, and destroy any of them on demand.
 
 ## What it does
 
-pr0xteus starts a short-lived Docker cell when a trusted caller needs a SOCKS5
-exit. Each cell owns one WireGuard configuration, waits for a handshake, and
-runs cellproxy — a first-party SOCKS5 proxy that also serves a control endpoint
+pr0xteus starts a short-lived Docker cell when a trusted caller needs an exit.
+Each cell owns one WireGuard configuration, waits for a handshake, and runs
+cellproxy, a first-party SOCKS5 proxy that also serves a control endpoint
 with per-cell traffic metrics and a real liveness check. A cell is reaped once
 it is idle (and carries no live connections) or unhealthy. Pools and country
 routing are operator-owned local files; callers cannot name configs, images,
@@ -172,15 +172,16 @@ TS_EXTRA_ARGS=--accept-dns=false  # extra `tailscale up` flags (see below)
 
 That starts an optional sidecar in its own network namespace, waits for it to
 join your tailnet, then serves the authenticated HTTP API on port 80, the
-private metrics listener on port 9091, and the lease-authenticated SOCKS
-gateway on port 1080. With
-`PR0XTEUS_DISABLE_HOST_PORTS=true`, the controller, metrics, and SOCKS gateway
+private metrics listener on port 9091, the lease-authenticated SOCKS5 gateway
+on port 1080, and the lease-authenticated HTTP proxy on port 8080. With
+`PR0XTEUS_DISABLE_HOST_PORTS=true`, the controller, metrics, SOCKS5 gateway,
+and HTTP proxy
 have no host binding at all: the sidecar reaches the controller only through
 the internal Docker `control` network. It does not touch a host Tailscale
 client, and the tailnet API still requires the bearer token. Keep tailnet
 access to port 9091 restricted because `/healthz` and `/metrics` are not
 authenticated. The wrapper
-derives `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` from the node's MagicDNS name, so a
+derives both proxy public addresses from the node's MagicDNS name, so either
 lease URL works directly from another tailnet machine. The sidecar's tailnet
 state lives in `~/.config/pr0xteus/tailscale/state`, so it keeps the same
 identity across restarts.
@@ -188,9 +189,9 @@ identity across restarts.
 For the normal host-local path, leave `PR0XTEUS_DISABLE_HOST_PORTS=false` (the
 default). The `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT` mappings
 and default to `127.0.0.1`. Set one to `0.0.0.0:PORT` only when an authenticated
-private boundary protects that port. If you change the SOCKS binding, also set
-`PR0XTEUS_SOCKS_PUBLIC_ADDRESS` to a real address clients can reach; `0.0.0.0`
-is a bind-all address, not a client destination.
+private boundary protects that port. If you change a proxy binding, also set
+its matching `*_PUBLIC_ADDRESS` to a real address clients can reach.
+`0.0.0.0` is a bind-all address, not a client destination.
 
 **Those values are the only Tailscale setup you need.** The compose file fixes
 the rest for *kernel-mode* Tailscale — `TS_USERSPACE=false` with `NET_ADMIN`,
@@ -271,27 +272,32 @@ short-lived credential: keep it out of logs and do not share it.
 token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
 auth=(--header @<(printf 'Authorization: Bearer %s' "$token"))
 
-# POST allocates one US exit. The URL comes back only after the cell finishes
-# its WireGuard handshake wait and the controller has issued a SOCKS5 lease.
-proxy_url="$(
+# POST allocates one US exit. The response comes back only after the cell
+# finishes its WireGuard handshake wait and issues both proxy URLs for one lease.
+allocation="$(
   curl --fail-with-body --request POST "${auth[@]}" \
     --header 'Content-Type: application/json' \
     --data '{"country":"US"}' \
-    http://127.0.0.1:8000/v1/proxies | jq -er '.url'
+    http://127.0.0.1:8000/v1/proxies
 )"
-echo "$proxy_url"    # socks5://lease-id:lease-secret@127.0.0.1:1080
+socks5_proxy="$(jq -er '.proxies.socks5' <<<"$allocation")"
+http_proxy="$(jq -er '.proxies.http' <<<"$allocation")"
 ```
 
-That `socks5://` URL works straight from the host or any client that can reach
-the controller's published SOCKS port. The controller authenticates the lease,
-then forwards the connection to the selected cell over its internal control
-network; DNS and outbound traffic happen in the cell through WireGuard:
+Both URLs work straight from the host or any client that can reach their
+published controller port. They share the same short-lived credentials, expiry,
+and selected cell. The controller authenticates the lease, then forwards either
+protocol to that cell over its internal control network; DNS and outbound
+traffic happen in the cell through WireGuard:
 
 ```bash
 curl --fail --silent --show-error \
-  --proxy "$proxy_url" https://api.ipify.org
+  --proxy "$socks5_proxy" https://api.ipify.org
 
-unset token proxy_url; unset -a auth
+curl --fail --silent --show-error \
+  --proxy "$http_proxy" https://api.ipify.org
+
+unset token allocation socks5_proxy http_proxy; unset -a auth
 ```
 
 That prints the public IP the world sees for that cell — your configured exit
@@ -308,7 +314,7 @@ right now.
 ```text
 trusted client ── private HTTP API ── pr0xteus ── socket proxy ── Docker
                                       │
-client ── lease-authenticated SOCKS5 ─┘
+client ── lease-authenticated SOCKS5 or HTTP proxy ─┘
                                       │
                                       └── private SOCKS5 cell ── WireGuard peer
 ```
@@ -373,12 +379,12 @@ GET    /healthz                # separate metrics listener, keep it private
 GET    /metrics                # Prometheus, separate metrics listener
 ```
 
-`POST /v1/proxies` returns a short-lived, credentialed `socks5://` URL only
-after the cell has completed its WireGuard handshake wait. The URL targets the
-controller's loopback-published SOCKS gateway by default, so normal host
-clients do not need Docker network membership. It has no host-reachable SOCKS
-address when `PR0XTEUS_DISABLE_HOST_PORTS=true`; use that mode for a tailnet API
-or another internal controller gateway, not host-side SOCKS clients.
+`POST /v1/proxies` returns short-lived, credentialed `socks5://` and `http://`
+URLs only after the cell has completed its WireGuard handshake wait. They target
+the controller's loopback-published SOCKS5 gateway and HTTP proxy by default, so
+normal host clients do not need Docker network membership. With
+`PR0XTEUS_DISABLE_HOST_PORTS=true`, use the tailnet addresses or another
+internal controller gateway rather than host-side proxy clients.
 `GET /v1/proxies` lists live tunnels with `lastUsedAt`, their latest issued
 lease URL and expiry, and exit metadata; it does not create a cell or a new
 lease.
@@ -416,7 +422,7 @@ demand. The exact request, response, and failure contract live in
 
 This repo ships a documentation skill for agents that need to drive a trusted
 pr0xteus controller. It knows the private control API, the real setup
-sequence, and the controller-fronted SOCKS5 lease flow. It does **not** pretend
+sequence, and the controller-fronted proxy lease flow. It does **not** pretend
 pr0xteus is an MCP server, because it is not one.
 
 ### Claude Code
@@ -464,7 +470,7 @@ make help          # every supported operation
 make format        # gofumpt + shfmt
 make lint          # Go, shell, and format checks
 make test          # unit tests plus a real Testcontainers WireGuard/SOCKS5 stack
-make test-api      # build pr0xteus from its Dockerfile in Testcontainers, hit every route
+make test-api      # build pr0xteus from its Dockerfile in Testcontainers, hit every route and proxy protocol
 make test-real     # opt-in real provider allocation and public-IP egress proof
 make test-coverage # gate every package at 90% (servicepack coverage engine)
 make sec           # govulncheck + semgrep merged to sec.sarif; gates on findings
@@ -486,9 +492,10 @@ Testcontainers suites you call on their own.
 build and start the **production** controller image, a self-contained WireGuard
 peer container (built from
 [`tests/testinfra/wireguard/`](tests/testinfra/wireguard/)), the cell image, and
-a sibling SOCKS5 client on an isolated Docker network. The
+a sibling proxy client on an isolated Docker network. The
 API test drives every control-plane route over real HTTP and proves that SOCKS5
-traffic traverses the WireGuard tunnel to a private test HTTP server on the peer.
+and HTTP-proxy traffic traverse the WireGuard tunnel to a private test HTTP
+server on the peer.
 It needs no provider account, real WireGuard bundle, host port, or persistent
 container, and Testcontainers tears down only the exact resources it created.
 
@@ -505,7 +512,7 @@ the ignored local provider bundle at `secrets/wg/provider-wireguard/` with
 the matching `secrets/wg/pools.yaml` and `config/egress-routing.yaml`, starts
 its own Testcontainers controller and consumer, requests a real egress proxy,
 then verifies that the consumer's public IPv4 address changes when traffic
-uses the returned SOCKS5 URL. Set `PR0XTEUS_REAL_TEST_COUNTRY=US` before
+uses both returned proxy URLs. Set `PR0XTEUS_REAL_TEST_COUNTRY=US` before
 running `make test-real` to select the routing input. It creates a fresh test
 token and a unique controller scope; it neither reads the production token nor
 touches a running stack.
@@ -524,8 +531,8 @@ re-implementing the HTTP contract.
 - Optional tailnet access is a separate, capability-minimized Tailscale
   sidecar. It is the only service with `/dev/net/tun`, `NET_ADMIN`, and
   `NET_RAW`; it has its own tailnet identity and exposes only the authenticated
-  controller API plus the lease-authenticated controller SOCKS gateway through
-  Tailscale Serve.
+  controller API plus the lease-authenticated controller SOCKS5 gateway and HTTP
+  proxy through Tailscale Serve.
 - A cell has the specific WireGuard exception: `NET_ADMIN` and `/dev/net/tun`,
   plus `SETUID`/`SETGID` solely for its one-way final drop to the non-root
   cellproxy account. It begins with default-drop firewall policy, allows the

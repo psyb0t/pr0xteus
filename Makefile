@@ -10,6 +10,7 @@ COVERAGE_DIRECTORY := .cover
 INTEGRATION_TEST_LOG := $(COVERAGE_DIRECTORY)/test-integration.log
 API_TEST_LOG := $(COVERAGE_DIRECTORY)/test-api.log
 REAL_TEST_LOG := $(COVERAGE_DIRECTORY)/test-real.log
+PUBLIC_IP_URL := https://api.ipify.org
 DEV_CONFIG_DIR ?= $(CURDIR)/.config/pr0xteus
 DEV_ENV := PR0XTEUS_ENV=dev PR0XTEUS_SOURCE_DIR=$(CURDIR) PR0XTEUS_HOME=$(DEV_CONFIG_DIR)
 
@@ -45,8 +46,8 @@ test-installed: dev-image ## Prove the installer-created stack API and real prox
 		-e PR0XTEUS_TEST_BASE_URL=http://pr0xteus:8000 \
 		-e PR0XTEUS_TEST_METRICS_URL=http://pr0xteus:9091 \
 		-e PR0XTEUS_TEST_PROXY_HOST=pr0xteus \
-		-e PR0XTEUS_TEST_DIRECT_IP="$$(docker run --rm $(DEV_IMAGE) curl --ipv4 --fail --silent --show-error https://api.ipify.org)" \
-		-e PR0XTEUS_TEST_PUBLIC_IP_ADDRESS="$$(docker run --rm $(DEV_IMAGE) getent ahostsv4 api.ipify.org | awk 'NR == 1 {print $$1}')" \
+		-e PR0XTEUS_TEST_DIRECT_IP="$$(docker run --rm $(DEV_IMAGE) curl --ipv4 --fail --silent --show-error $(PUBLIC_IP_URL))" \
+		-e PR0XTEUS_TEST_PUBLIC_IP_URL="$(PUBLIC_IP_URL)" \
 		-v "$(CURDIR):/work:ro" \
 		-v "$(DEV_CONFIG_DIR):/config:ro" \
 		-w /work \

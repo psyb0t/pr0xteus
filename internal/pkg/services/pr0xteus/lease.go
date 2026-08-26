@@ -14,11 +14,12 @@ import (
 
 const proxyLeaseSecretBytes = 32
 
-// ProxyLease is the short-lived SOCKS5 capability issued after an allocation.
-// The raw secret exists only in URL returned to the authenticated caller; the
-// registry retains a digest so logs and in-memory diagnostics cannot recover it.
+// ProxyLease is the short-lived capability issued after an allocation. Both
+// returned proxy URLs route through the exact same cell. The raw secret exists
+// only in the URLs returned to the authenticated caller; the registry retains
+// a digest so logs and in-memory diagnostics cannot recover it.
 type ProxyLease struct {
-	URL       string
+	Proxies   ProxyURLs
 	ExpiresAt time.Time
 }
 
@@ -32,19 +33,23 @@ type proxyLeaseRecord struct {
 }
 
 type leaseRegistry struct {
-	mu         sync.Mutex
-	publicAddr string
-	ttl        time.Duration
-	now        func() time.Time
-	leases     map[string]proxyLeaseRecord
+	mu                  sync.Mutex
+	socksPublicAddr     string
+	httpProxyPublicAddr string
+	ttl                 time.Duration
+	now                 func() time.Time
+	leases              map[string]proxyLeaseRecord
 }
 
-func newLeaseRegistry(publicAddr string, ttl time.Duration) *leaseRegistry {
+func newLeaseRegistry(
+	socksPublicAddr, httpProxyPublicAddr string, ttl time.Duration,
+) *leaseRegistry {
 	return &leaseRegistry{
-		publicAddr: publicAddr,
-		ttl:        ttl,
-		now:        time.Now,
-		leases:     make(map[string]proxyLeaseRecord),
+		socksPublicAddr:     socksPublicAddr,
+		httpProxyPublicAddr: httpProxyPublicAddr,
+		ttl:                 ttl,
+		now:                 time.Now,
+		leases:              make(map[string]proxyLeaseRecord),
 	}
 }
 
@@ -82,13 +87,21 @@ func (r *leaseRegistry) Issue(acq Acquisition) (ProxyLease, error) {
 	}
 	r.mu.Unlock()
 
-	leaseURL := (&url.URL{
+	socksURL := (&url.URL{
 		Scheme: proxySchemeSOCKS5,
-		Host:   r.publicAddr,
+		Host:   r.socksPublicAddr,
+		User:   url.UserPassword(leaseID, secret),
+	}).String()
+	httpURL := (&url.URL{
+		Scheme: proxySchemeHTTP,
+		Host:   r.httpProxyPublicAddr,
 		User:   url.UserPassword(leaseID, secret),
 	}).String()
 
-	return ProxyLease{URL: leaseURL, ExpiresAt: expiresAt}, nil
+	return ProxyLease{
+		Proxies:   ProxyURLs{SOCKS5: socksURL, HTTP: httpURL},
+		ExpiresAt: expiresAt,
+	}, nil
 }
 
 func (r *leaseRegistry) Lookup(leaseID, secret string) (proxyLeaseRecord, bool) {
