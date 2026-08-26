@@ -90,7 +90,8 @@ operator setting.
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
 commands: `pr0xteus stop`, `pr0xteus restart`,
 `pr0xteus status`, `pr0xteus logs`, `pr0xteus upgrade`
-(refreshes `.env.example`, re-pins to the newest release, and drops the old
+(refreshes `.env.example` and managed templates, re-pins to the newest
+release, refreshes the command, starts through that command, and drops the old
 image), and `pr0xteus uninstall` (prompts before deleting
 `~/.config/pr0xteus`). Append `--rolling` to `start`/`upgrade` to use the moving
 `:latest` image for one run.

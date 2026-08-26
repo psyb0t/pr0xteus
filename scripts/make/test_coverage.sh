@@ -10,4 +10,5 @@ REPOSITORY_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPOSITORY_DIR}"
 # Servicepack owns coverage; this project only prepares its required cell image.
 bash scripts/build_cell.sh
-exec bash scripts/make/servicepack/test_coverage.sh
+bash scripts/make/servicepack/test_coverage.sh
+bash scripts/test-wrapper-upgrade.sh

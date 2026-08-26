@@ -23,8 +23,9 @@ stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
 `/etc/pr0xteus` instead of `~/.config/pr0xteus`.
 
 The installer creates `~/.config/pr0xteus/`, writes managed local Compose
-templates, and adds the `pr0xteus` command. A later installer run, `setup`, or
-`upgrade` refreshes only those templates and `.env.example`; it preserves
+templates, and adds the `pr0xteus` command. A later installer run or `setup`
+refreshes only those templates and `.env.example`. `upgrade` also refreshes the
+command and starts the stack through the refreshed command. All three preserve
 `.env`, pools, routing, WireGuard files, and Tailscale state. It creates pool
 and routing skeletons plus empty `secrets/wireguard/`; it never manufactures a
 provider configuration. The random bearer token is written directly to
@@ -56,9 +57,10 @@ matching versioned cell. To pin a controller release, set
 The controller pulls that exact matching cell image when it allocates a tunnel;
 the cell image is not an operator setting.
 
-After upgrading to a release with new runtime wiring, run `pr0xteus setup`.
-It refreshes the managed base and port-overlay Compose files while preserving
-your existing operator configuration.
+`pr0xteus upgrade` refreshes the managed base and port-overlay Compose files,
+refreshes its command, then starts through that refreshed command. No separate
+`setup` or `start` is needed after an upgrade, including when current Tailscale
+Serve routes or proxy public addresses changed.
 
 ## Tailscale sidecar
 

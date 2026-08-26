@@ -79,8 +79,9 @@ it — root → system-wide, otherwise per-user — and `--system` / `--user` fo
 
 Either way it drops managed local Compose templates and starter config,
 generates a bearer token in an owner-only `.env`, refreshes a readable
-`.env.example`, and installs the `pr0xteus` command. Later `setup` and
-`upgrade` refresh only those managed Compose templates; `.env`, pools, routing,
+`.env.example`, and installs the `pr0xteus` command. Later `setup` refreshes
+only those managed Compose templates. `upgrade` refreshes them and the command,
+then starts the stack through the refreshed command. `.env`, pools, routing,
 WireGuard files, and Tailscale state are never replaced. No source checkout
 required. It pins to the **latest tagged release** — never `:latest` on your
 box — and the controller derives its matching cell image from that tag, so both
@@ -143,12 +144,14 @@ pr0xteus status
 pr0xteus logs --follow
 pr0xteus stop
 pr0xteus restart     # restart the stack
-pr0xteus upgrade     # re-pin to the newest release, pull it, drop the old image
+pr0xteus upgrade     # re-pin, refresh the command, start the stack, drop the old image
 pr0xteus uninstall   # stop the stack, remove the command, ask before deleting data
 ```
 
 `setup` and `upgrade` refresh `.env.example` and the managed Compose templates
-while preserving operator config. `upgrade` also re-pins
+while preserving operator config. `upgrade` also refreshes the command, then
+starts the stack through that new command so current Tailscale routes and
+public proxy addresses take effect. It re-pins
 `~/.config/pr0xteus/.env` to the selected image and removes the previous image
 so dangling layers do not pile up; `uninstall` only deletes your
 `~/.config/pr0xteus` data and volumes if you say yes at the prompt.

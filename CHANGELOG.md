@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.1 - 2026-08-26
+
+- Fixed `pr0xteus upgrade` so it refreshes the installed command before
+  starting the selected release. Upgrades now apply current Tailscale routes
+  and proxy-address wiring without a separate `setup` or `start` command.
+- Added wrapper-upgrade regression coverage for tagged and rolling releases,
+  user and system installs, and failed command refreshes.
+
 ## v0.11.0 - 2026-08-26
 
 **Breaking before 1.0:** `POST /v1/proxies` no longer returns a top-level

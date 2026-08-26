@@ -7,7 +7,7 @@ readonly CONFIG_DIRECTORY_NAME="pr0xteus"
 readonly SYSTEM_CONFIG_DIR="/etc/pr0xteus"
 readonly IMAGE_REPO="psyb0t/pr0xteus"
 readonly ROLLING_IMAGE="psyb0t/pr0xteus:latest"
-readonly INSTALLER_URL="https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh"
+readonly WRAPPER_SOURCE_URL_BASE="https://raw.githubusercontent.com/psyb0t/pr0xteus"
 readonly GITHUB_API_LATEST="https://api.github.com/repos/psyb0t/pr0xteus/releases/latest"
 readonly COMMAND_LOG_FILE="${TMPDIR:-/tmp}/pr0xteus-command.log"
 readonly TAILSCALE_READY_ATTEMPTS=30
@@ -38,7 +38,7 @@ Commands:
   restart    Restart the stack
   status     Show the controller and socket-proxy state
   logs       Follow logs; pass any extra `docker compose logs` arguments
-  upgrade    Re-pin to the latest release, pull it, and drop the previous image
+  upgrade    Re-pin, refresh this command, start the stack, and drop the previous image
   uninstall  Stop the stack, remove the command, and offer to delete your data
   help       Show this help
 
@@ -387,30 +387,90 @@ show_logs() {
 	compose "$config_dir" logs "$@"
 }
 
+wrapper_path() {
+	local path
+	path="$(readlink -f -- "${BASH_SOURCE[0]}")"
+	[[ -n "$path" && -f "$path" ]] || fail "could not resolve the installed pr0xteus command"
+	printf '%s\n' "$path"
+}
+
+wrapper_url() {
+	local revision="$1"
+	[[ -n "$revision" ]] || fail "the refreshed pr0xteus command needs a source revision"
+	printf '%s/%s/scripts/pr0xteus.sh\n' "$WRAPPER_SOURCE_URL_BASE" "$revision"
+}
+
+refresh_wrapper() {
+	local current_path revision source_url temporary_path
+	revision="$1"
+
+	if development_enabled; then
+		return
+	fi
+
+	current_path="$(wrapper_path)"
+	source_url="$(wrapper_url "$revision")"
+	temporary_path="$(mktemp)"
+	if ! curl -fsSL "$source_url" >"$temporary_path"; then
+		rm -f "$temporary_path"
+		fail "could not download the refreshed pr0xteus command"
+	fi
+	if ! grep -Fq "pr0xteus-managed-command" "$temporary_path"; then
+		rm -f "$temporary_path"
+		fail "the refreshed pr0xteus command is not managed by pr0xteus"
+	fi
+	if ! bash -n "$temporary_path"; then
+		rm -f "$temporary_path"
+		fail "the refreshed pr0xteus command has invalid shell syntax"
+	fi
+
+	say "refreshing the pr0xteus command"
+	if [[ -w "$(dirname "$current_path")" ]]; then
+		if ! install -m 0755 "$temporary_path" "$current_path"; then
+			rm -f "$temporary_path"
+			fail "could not install the refreshed pr0xteus command"
+		fi
+	else
+		command -v sudo >/dev/null || fail "refreshing $current_path needs root but sudo is not available"
+		if ! sudo install -m 0755 "$temporary_path" "$current_path"; then
+			rm -f "$temporary_path"
+			fail "could not install the refreshed pr0xteus command"
+		fi
+	fi
+	rm -f "$temporary_path"
+}
+
+start_refreshed_wrapper() {
+	local config_dir="$1" current_path
+	current_path="$(wrapper_path)"
+	[[ -x "$current_path" ]] || fail "the refreshed pr0xteus command is not executable"
+	say "starting the upgraded stack"
+	PR0XTEUS_HOME="$config_dir" "$current_path" start
+}
+
 upgrade() {
-	local config_dir runtime_user
+	local config_dir image old_image runtime_user
 	config_dir="$(config_directory)"
 	runtime_user="$(operator_runtime_user)"
 	[[ -f "$config_dir/docker-compose.yml" ]] || fail "run pr0xteus setup first"
 
 	if [[ "${PR0XTEUS_ROLLING:-}" == "1" ]]; then
 		warn "pulling the rolling :latest image (recorded pin unchanged)"
-		docker pull "$ROLLING_IMAGE"
+		image="$ROLLING_IMAGE"
+		pull_controller_image "$image"
 		config_command "$config_dir" "$ROLLING_IMAGE" init \
 			--host-config-dir "$config_dir" \
 			--controller-image "$ROLLING_IMAGE" \
 			--runtime-user "$runtime_user" \
 			--refresh-runtime-templates
 		env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
-		export PR0XTEUS_CONTROLLER_IMAGE="$ROLLING_IMAGE"
-		compose "$config_dir" up --detach
-		wire_tailscale_serve "$config_dir"
-		compose "$config_dir" ps
+		refresh_wrapper main
+		PR0XTEUS_ROLLING=1 start_refreshed_wrapper "$config_dir"
 
 		return
 	fi
 
-	local old_image new_tag new_image
+	local new_tag new_image
 	old_image="$(env_pinned_image "$config_dir")"
 	new_tag="$(resolve_latest_tag)"
 	new_image="$IMAGE_REPO:$new_tag"
@@ -420,7 +480,7 @@ upgrade() {
 	fi
 
 	say "pinning to $new_image"
-	docker pull "$new_image"
+	pull_controller_image "$new_image"
 	config_command "$config_dir" "$new_image" init \
 		--host-config-dir "$config_dir" \
 		--controller-image "$new_image" \
@@ -428,19 +488,8 @@ upgrade() {
 		--refresh-runtime-templates
 	env_set "$config_dir" PR0XTEUS_CONTROLLER_IMAGE "$new_image"
 	env_set "$config_dir" PR0XTEUS_RUNTIME_USER "$runtime_user"
-	export PR0XTEUS_CONTROLLER_IMAGE="$new_image"
-	compose "$config_dir" up --detach
-	wire_tailscale_serve "$config_dir"
-	compose "$config_dir" ps
-
-	# Refresh the wrapper itself from the new installer (self-update), re-running
-	# in the same mode this install used.
-	say "refreshing the installer + wrapper"
-	if [[ "$config_dir" == "$SYSTEM_CONFIG_DIR" ]]; then
-		curl -fsSL "$INSTALLER_URL" | sudo bash -s -- --system
-	else
-		curl -fsSL "$INSTALLER_URL" | bash -s -- --user
-	fi
+	refresh_wrapper "$new_tag"
+	start_refreshed_wrapper "$config_dir"
 
 	# Reclaim space: drop the previous image once the new one is running.
 	if [[ -n "$old_image" && "$old_image" != "$new_image" ]]; then
