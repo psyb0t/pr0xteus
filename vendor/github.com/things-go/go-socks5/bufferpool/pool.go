@@ -34,7 +34,7 @@ func (sf *pool) Get() []byte {
 // Put implement interface BufPool
 func (sf *pool) Put(b []byte) {
 	if cap(b) != sf.size {
-		panic("invalid buffer size that's put into leaky buffer")
+		return // invalid buffer size that's put into leaky buffer
 	}
 	sf.pool.Put(b[:0]) //nolint: staticcheck
 }
