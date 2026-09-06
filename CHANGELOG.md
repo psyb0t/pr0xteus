@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.3 - 2026-09-06
+
+- Fixed the development image build. The pinned Alpine package versions in
+  `Dockerfile.dev` had drifted upstream (curl, docker-cli, docker-cli-compose,
+  jq, and shfmt moved to new revisions), so `apk add` could no longer satisfy
+  the exact pins and every Make-driven lint, test, and security check failed at
+  image build. Bumped the five pins to the currently published revisions.
+- Bumped dependencies: `golang.org/x/net` to 0.58.0,
+  `github.com/moby/moby/client` to 0.5.1, `github.com/things-go/go-socks5` to
+  0.1.3, and `github.com/stretchr/testify` to 1.12.1. Bumped
+  `github.com/moby/go-archive` to 0.3.0, which fixes a high-severity
+  path-traversal issue where a crafted tar archive could write outside the
+  extraction directory.
+
 ## v0.11.2 - 2026-09-06
 
 - Fixed the `pkg/client` SOCKS5 transport dropping the lease credentials. It
