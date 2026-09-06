@@ -68,7 +68,7 @@ func dialSocks5(
 ) (net.Conn, error) {
 	forward := &ipv4OnlyDialer{}
 
-	socks, err := xproxy.SOCKS5("tcp", proxyURL.Host, nil, forward)
+	socks, err := xproxy.SOCKS5("tcp", proxyURL.Host, socks5Auth(proxyURL), forward)
 	if err != nil {
 		return nil, ctxerrors.Wrap(
 			ErrEgressUnavailable, "build socks5 dialer: "+err.Error(),
@@ -90,6 +90,25 @@ func dialSocks5(
 	}
 
 	return conn, nil
+}
+
+// socks5Auth extracts the username and password embedded in a pr0xteus lease URL
+// (socks5://user:pass@host:port) into the *proxy.Auth that x/net/proxy's SOCKS5
+// dialer offers during the greeting. The lease gateway requires username/password
+// auth, so passing nil here makes every authenticated lease fail its SOCKS
+// handshake with "no acceptable authentication methods". Returns nil when the URL
+// carries no credentials, which keeps the unauthenticated path unchanged.
+func socks5Auth(proxyURL *url.URL) *xproxy.Auth {
+	if proxyURL.User == nil {
+		return nil
+	}
+
+	password, _ := proxyURL.User.Password()
+
+	return &xproxy.Auth{
+		User:     proxyURL.User.Username(),
+		Password: password,
+	}
 }
 
 // ipv4OnlyDialer is the forward dialer x/net/proxy's SOCKS5 client

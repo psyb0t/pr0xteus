@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.11.2 - 2026-09-06
+
+- Fixed the `pkg/client` SOCKS5 transport dropping the lease credentials. It
+  dialed the gateway with no authentication even when the lease URL carried a
+  username and password, so every authenticated SOCKS5 lease failed its
+  handshake with "no acceptable authentication methods". The transport now
+  offers the lease credentials during the SOCKS5 greeting.
+- Added regression coverage: a unit test for the credential extraction and an
+  integration test that routes through a relay requiring username and password
+  auth and rejecting an unauthenticated greeting, which the previous
+  credential-blind test relay could not catch.
+
 ## v0.11.1 - 2026-08-26
 
 - Fixed `pr0xteus upgrade` so it refreshes the installed command before
