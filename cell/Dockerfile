@@ -29,7 +29,7 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 #   resolver supplies DNS; once WG is up resolv.conf is switched)
 RUN apk add --no-cache \
 	bash=5.3.9-r1 \
-	bind-tools=9.20.26-r0 \
+	bind-tools=9.20.27-r0 \
 	iproute2=7.0.0-r0 \
 	iptables=1.8.13-r0 \
 	su-exec=0.3-r0 \

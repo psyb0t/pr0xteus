@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.4 - 2026-09-06
+
+- Fixed the cell image build. The pinned `bind-tools` version in `cell/Dockerfile`
+  had drifted upstream (9.20.26-r0 moved to 9.20.27-r0), so `apk add` could no
+  longer satisfy the exact pin and the coverage test setup, which builds the cell
+  image, failed. Bumped the pin to the currently published revision.
+
 ## v0.11.3 - 2026-09-06
 
 - Fixed the development image build. The pinned Alpine package versions in
