@@ -3,7 +3,7 @@ module github.com/psyb0t/pr0xteus
 go 1.26.6
 
 require (
-	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/api v1.56.0
 	github.com/psyb0t/ctxerrors v0.7.1
 	github.com/psyb0t/ctxscope v1.0.3
 	github.com/psyb0t/goenv v1.0.10
@@ -165,7 +165,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.3.0 // indirect
-	github.com/moby/moby/client v0.5.1
+	github.com/moby/moby/client v0.6.0
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/user v0.4.1 // indirect
