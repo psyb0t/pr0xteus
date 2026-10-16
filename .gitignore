@@ -1,5 +1,4 @@
-# Codex / agent scratch — never commit
-AGENTS.md
+# Codex / agent scratch: never commit
 CODEX.local.md
 .research_files/
 .agent_notes/
@@ -22,6 +21,7 @@ TODO.md
 WIP.md
 CLAUDE.md
 git-update.sh
+git-update.sh.debot
 
 # Secrets and real WireGuard material
 .env
