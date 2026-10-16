@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.11.5 - 2026-10-16
+
+- Updated servicepack from v1.9.2 to v1.10.0.
+- Moved the Docker images to Go 1.26.9 and the current Alpine 3.24 packages.
+  This clears the Go standard library vulnerabilities that `make sec` reported
+  for Go 1.26.6.
+- Fixed the image builds after upstream Alpine package revisions moved. The
+  `bind-tools` pin in `cell/Dockerfile` is now 9.20.29-r0 and the
+  `ca-certificates` pin in `Dockerfile` and `Dockerfile.integration` is now
+  20260909-r0.
+
 ## v0.11.4 - 2026-09-06
 
 - Fixed the cell image build. The pinned `bind-tools` version in `cell/Dockerfile`
