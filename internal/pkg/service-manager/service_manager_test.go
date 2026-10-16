@@ -516,7 +516,8 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 		setupService func() Service
 		expectError  bool
 		expectedRuns int
-		cancelAfter  time.Duration
+		cancelOnRun  int
+		cancelDelay  time.Duration
 	}{
 		{
 			name: "service succeeds first try",
@@ -527,7 +528,7 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			},
 			expectError:  false,
 			expectedRuns: 1,
-			cancelAfter:  20 * time.Millisecond,
+			cancelOnRun:  1,
 		},
 		{
 			name: "service fails all retries",
@@ -554,7 +555,7 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			},
 			expectError:  false,
 			expectedRuns: 3,
-			cancelAfter:  50 * time.Millisecond,
+			cancelOnRun:  3,
 		},
 		{
 			name: "context cancelled during retry",
@@ -571,7 +572,7 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			},
 			expectError:  false,
 			expectedRuns: -1,
-			cancelAfter:  30 * time.Millisecond,
+			cancelOnRun:  1,
 		},
 		{
 			name: "retry with delay",
@@ -590,7 +591,7 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			},
 			expectError:  false,
 			expectedRuns: 2,
-			cancelAfter:  200 * time.Millisecond,
+			cancelOnRun:  2,
 		},
 		{
 			name: "ctx cancelled during retry delay",
@@ -605,7 +606,7 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			},
 			expectError:  false,
 			expectedRuns: -1,
-			cancelAfter:  50 * time.Millisecond,
+			cancelDelay:  50 * time.Millisecond,
 		},
 		{
 			name: "non-retryable service fails",
@@ -631,10 +632,40 @@ func TestServiceManager_RunWithRetries(t *testing.T) {
 			)
 			defer cancel()
 
-			if tc.cancelAfter > 0 {
+			var observedRuns atomic.Int32
+
+			firstRun := make(chan struct{})
+
+			if retryable, ok := svc.(*RetryableMockService); ok &&
+				(tc.cancelOnRun > 0 || tc.cancelDelay > 0) {
+				retryable.WithOnRun(func() {
+					run := int(observedRuns.Add(1))
+					if run == 1 {
+						close(firstRun)
+					}
+
+					if run == tc.cancelOnRun {
+						cancel()
+					}
+				})
+			}
+
+			if tc.cancelDelay > 0 {
 				go func() {
-					time.Sleep(tc.cancelAfter)
-					cancel()
+					select {
+					case <-firstRun:
+					case <-ctx.Done():
+						return
+					}
+
+					timer := time.NewTimer(tc.cancelDelay)
+					defer timer.Stop()
+
+					select {
+					case <-timer.C:
+						cancel()
+					case <-ctx.Done():
+					}
 				}()
 			}
 
@@ -952,6 +983,157 @@ func TestServiceManager_RunWithConcurrentFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+// startupFailureBound is the context deadline for the startup-failure tests.
+// Run must return well inside it; hitting it means Run was stuck waiting for a
+// ready signal that can never arrive.
+const startupFailureBound = 5 * time.Second
+
+type allowedFailureReadyService struct {
+	*ReadyMockService
+}
+
+func (a *allowedFailureReadyService) IsAllowedFailure() bool {
+	return true
+}
+
+// TestServiceManager_RunReturnsServiceFailureBeforeReady proves Run returns
+// the error of a ReadyNotifier service that fails before it signals ready.
+// waitGroupReady used to block on that service's Ready channel, which never
+// closes, so only context cancellation could end Run.
+func TestServiceManager_RunReturnsServiceFailureBeforeReady(
+	t *testing.T,
+) {
+	ResetInstance()
+
+	sm := GetInstance()
+	sm.Add(NewReadyMockService("db").WithRunError(errTestService))
+
+	ctx, cancel := context.WithTimeout(t.Context(), startupFailureBound)
+	defer cancel()
+
+	start := time.Now()
+	err := sm.Run(ctx)
+
+	require.ErrorIs(t, err, errTestService)
+	assert.Less(t, time.Since(start), startupFailureBound)
+	assert.NoError(t, ctx.Err())
+}
+
+func (r *ReadyMockService) WithRunError(err error) *ReadyMockService {
+	r.MockService.WithRunError(err)
+
+	return r
+}
+
+// TestServiceManager_FailureBeforeReadyStopsLaterGroups proves a group that
+// depends on a failed one is never started.
+func TestServiceManager_FailureBeforeReadyStopsLaterGroups(
+	t *testing.T,
+) {
+	ResetInstance()
+
+	sm := GetInstance()
+
+	db := NewReadyMockService("db").WithRunError(errTestService)
+	api := NewReadyMockService("api", "db")
+
+	sm.Add(db, api)
+
+	ctx, cancel := context.WithTimeout(t.Context(), startupFailureBound)
+	defer cancel()
+
+	err := sm.Run(ctx)
+
+	require.ErrorIs(t, err, errTestService)
+	assert.False(t, api.WasRunCalled(), "later group must not start")
+}
+
+// TestServiceManager_AllowedFailureBeforeReady proves an allowed-failure
+// service that exits before it signals ready neither fails Run nor blocks the
+// startup of the groups after it.
+func TestServiceManager_AllowedFailureBeforeReady(t *testing.T) {
+	ResetInstance()
+
+	sm := GetInstance()
+
+	optional := &allowedFailureReadyService{
+		ReadyMockService: NewReadyMockService("optional").
+			WithRunError(errTestService),
+	}
+	api := NewReadyMockService("api", "optional")
+
+	sm.Add(optional, api)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	api.WithOnRun(func() {
+		api.SignalReady()
+		cancel()
+	})
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- sm.Run(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(startupFailureBound):
+		t.Fatal("Run blocked on the ready signal of an allowed failure")
+	}
+
+	assert.True(t, api.WasRunCalled(), "dependent group must still start")
+}
+
+// TestServiceManager_CleanExitBeforeReady proves a service that returns nil
+// before it signals ready does not block startup of the groups after it.
+func TestServiceManager_CleanExitBeforeReady(t *testing.T) {
+	ResetInstance()
+
+	sm := GetInstance()
+
+	api := NewReadyMockService("api", "exiter")
+
+	sm.Add(
+		&exitsCleanlyService{ReadyMockService: NewReadyMockService("exiter")},
+		api,
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	api.WithOnRun(func() {
+		api.SignalReady()
+		cancel()
+	})
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- sm.Run(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(startupFailureBound):
+		t.Fatal("Run blocked on the ready signal of a service that exited")
+	}
+
+	assert.True(t, api.WasRunCalled(), "dependent group must still start")
+}
+
+type exitsCleanlyService struct {
+	*ReadyMockService
+}
+
+func (e *exitsCleanlyService) Run(_ context.Context) error {
+	return nil
 }
 
 func TestServiceManager_PanicRecovery(t *testing.T) {
