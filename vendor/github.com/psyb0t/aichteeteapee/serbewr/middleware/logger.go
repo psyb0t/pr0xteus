@@ -97,6 +97,10 @@ func Logger(opts ...LoggerOption) Middleware {
 				w http.ResponseWriter,
 				r *http.Request,
 			) {
+				// path.Clean normalizes the URL path for the configured
+				// skip-list lookup. This is net/url path.Clean, not
+				// filesystem-traversal sanitizing, so the rule does not apply.
+				// nosemgrep
 				if config.SkipPaths[path.Clean(r.URL.Path)] {
 					next.ServeHTTP(w, r)
 

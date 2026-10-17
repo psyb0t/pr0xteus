@@ -1,14 +1,15 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
-	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/psyb0t/aichteeteapee"
+	"github.com/psyb0t/ctxerrors"
 	"github.com/psyb0t/ctxscope"
 )
 
@@ -16,15 +17,22 @@ import (
 // writes during timeout.
 type timeoutResponseWriter struct {
 	BaseResponseWriter
-	mu      *sync.Mutex
-	written *bool
+	mu       *sync.Mutex
+	header   http.Header
+	written  *bool
+	timedOut *bool
+}
+
+func (tw *timeoutResponseWriter) Header() http.Header {
+	return tw.header
 }
 
 func (tw *timeoutResponseWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if !*tw.written {
+	if !*tw.written && !*tw.timedOut {
+		tw.copyHeaders()
 		*tw.written = true
 		tw.ResponseWriter.WriteHeader(code)
 	}
@@ -34,18 +42,76 @@ func (tw *timeoutResponseWriter) Write(data []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	// If this is the first write, mark as written and write headers if needed
+	if *tw.timedOut {
+		return 0, ctxerrors.Wrap(
+			http.ErrHandlerTimeout,
+			"write timed-out response",
+		)
+	}
+
 	if !*tw.written {
+		tw.copyHeaders()
 		*tw.written = true
 	}
 
-	// Always attempt to write the data (unless we've already timed out)
 	n, err := tw.ResponseWriter.Write(data)
 	if err != nil {
-		return n, fmt.Errorf("failed to write response: %w", err)
+		return n, ctxerrors.Wrap(err, "write response")
 	}
 
 	return n, nil
+}
+
+func (tw *timeoutResponseWriter) Flush() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
+	if *tw.timedOut {
+		return
+	}
+
+	if !*tw.written {
+		tw.copyHeaders()
+		*tw.written = true
+	}
+
+	if flusher, ok := tw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (tw *timeoutResponseWriter) Hijack() (
+	net.Conn,
+	*bufio.ReadWriter,
+	error,
+) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
+	if *tw.timedOut {
+		return nil, nil, ctxerrors.Wrap(
+			http.ErrHandlerTimeout,
+			"hijack timed-out response",
+		)
+	}
+
+	connection, readWriter, err := tw.BaseResponseWriter.Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	*tw.written = true
+
+	return connection, readWriter, nil
+}
+
+func (tw *timeoutResponseWriter) copyHeaders() {
+	destination := tw.ResponseWriter.Header()
+	clear(destination)
+
+	for name, values := range tw.header {
+		destination[name] = append([]string(nil), values...)
+	}
 }
 
 const (
@@ -87,9 +153,7 @@ func WithLongTimeout() TimeoutOption {
 }
 
 // TimeoutMiddleware sets a timeout for the request context and handles
-// timeout responses
-//
-//nolint:funlen // Timeout handling logic requires length
+// timeout responses.
 func Timeout(opts ...TimeoutOption) Middleware {
 	config := &TimeoutConfig{
 		Timeout: DefaultTimeout,
@@ -101,77 +165,78 @@ func Timeout(opts ...TimeoutOption) Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, cancel := context.WithTimeout(r.Context(), config.Timeout)
-			defer cancel()
-
-			// Channel to track if handler completes
-			doneCh := make(chan struct{})
-
-			// Use a mutex to ensure only one response is written
-			var (
-				mu              sync.Mutex
-				responseWritten bool
-			)
-
-			// Create a wrapper that protects against concurrent writes
-			wrappedWriter := &timeoutResponseWriter{
-				BaseResponseWriter: BaseResponseWriter{ResponseWriter: w},
-				mu:                 &mu,
-				written:            &responseWritten,
-			}
-
-			// Run the handler in a goroutine
-			go func() {
-				defer close(doneCh)
-
-				next.ServeHTTP(wrappedWriter, r.WithContext(ctx))
-			}()
-
-			// Wait for either completion or timeout
-			select {
-			case <-doneCh:
-				// Handler completed normally
-				return
-			case <-ctx.Done():
-				// Timeout occurred - send timeout response
-				mu.Lock()
-
-				if !responseWritten {
-					responseWritten = true
-
-					ctxscope.GetLogger(r.Context()).Warn(
-						"request timeout exceeded",
-						"timeout", config.Timeout.String(),
-					)
-
-					w.Header().Set(
-						aichteeteapee.HeaderNameContentType,
-						aichteeteapee.ContentTypeJSON,
-					)
-					w.WriteHeader(http.StatusGatewayTimeout)
-
-					// Create a gateway timeout error response
-					timeoutError := aichteeteapee.ErrorResponse{
-						Code: "GATEWAY_TIMEOUT",
-						Message: "Gateway timeout - " +
-							"request processing took too long",
-					}
-
-					responseBytes, err := json.Marshal(timeoutError)
-					if err == nil {
-						_, _ = w.Write(responseBytes)
-					} else {
-						_, _ = w.Write(
-							[]byte(
-								`{"code":"GATEWAY_TIMEOUT",` +
-									`"message":"Gateway timeout"}`,
-							),
-						)
-					}
-				}
-
-				mu.Unlock()
-			}
+			serveWithTimeout(w, r, next, config.Timeout)
 		})
 	}
+}
+
+func serveWithTimeout(
+	w http.ResponseWriter,
+	r *http.Request,
+	next http.Handler,
+	timeout time.Duration,
+) {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	doneCh := make(chan struct{})
+
+	var (
+		mu               sync.Mutex
+		responseWritten  bool
+		responseTimedOut bool
+	)
+
+	wrappedWriter := &timeoutResponseWriter{
+		BaseResponseWriter: BaseResponseWriter{ResponseWriter: w},
+		mu:                 &mu,
+		header:             w.Header().Clone(),
+		written:            &responseWritten,
+		timedOut:           &responseTimedOut,
+	}
+
+	go func() {
+		defer close(doneCh)
+
+		next.ServeHTTP(wrappedWriter, r.WithContext(ctx))
+	}()
+
+	select {
+	case <-doneCh:
+		return
+	case <-ctx.Done():
+		writeTimeoutResponse(r.Context(), w, wrappedWriter, timeout)
+	}
+}
+
+func writeTimeoutResponse(
+	ctx context.Context,
+	w http.ResponseWriter,
+	wrappedWriter *timeoutResponseWriter,
+	timeout time.Duration,
+) {
+	wrappedWriter.mu.Lock()
+	defer wrappedWriter.mu.Unlock()
+
+	*wrappedWriter.timedOut = true
+
+	if *wrappedWriter.written {
+		return
+	}
+
+	*wrappedWriter.written = true
+
+	ctxscope.GetLogger(ctx).Warn(
+		"request timeout exceeded",
+		"timeout", timeout.String(),
+	)
+	aichteeteapee.WriteJSON(
+		w,
+		http.StatusGatewayTimeout,
+		aichteeteapee.ErrorResponse{
+			Code: aichteeteapee.ErrorCodeGatewayTimeout,
+			Message: "Gateway timeout - " +
+				"request processing took too long",
+		},
+	)
 }

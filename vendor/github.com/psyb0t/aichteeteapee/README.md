@@ -80,7 +80,7 @@ Pronounced "server". D'oooh you kno. Built on `net/http` with Go 1.22+ `ServeMux
 
 ### [`serbewr/middleware/`](docs/middleware.md) — middleware stack
 
-RequestID, Logger, Recovery, BasicAuth, CORS, SecurityHeaders, Timeout, EnforceRequestContentType. All use context-propagated structured logging — set it up once, every log line gets the full request context for free. [Full docs](docs/middleware.md).
+RequestID, Logger, Recovery, BasicAuth, BearerAuth, CORS, SecurityHeaders, Timeout, EnforceRequestContentType. All use context-propagated structured logging — set it up once, every log line gets the full request context for free. [Full docs](docs/middleware.md).
 
 ### [`serbewr/prawxxey/`](docs/proxy.md) — request forwarding
 
@@ -94,14 +94,14 @@ Pronounced "WS" — because why stop at one wordplay. Three-tier architecture (H
 
 For when you want [labstack/echo](https://github.com/labstack/echo) instead of `net/http`. Wrapper with auto-served OpenAPI specs, Swagger UI, Bearer auth middleware, and OpenAPI request validation via oapi-codegen. [Full docs](docs/echo.md).
 
-### TODO — client-side utilities
+### [`klhayyent/`](docs/client.md), HTTP client
 
-Everything above is **server-side**. There is no HTTP *client* here yet — an
-outbound request helper (a `clientutils`-style package: a `Do`/`Get`/`POST`
-wrapper that reuses the same content-type and header constants, handles JSON
-encode/decode, and returns the same `ErrorResponse` envelope). It's a planned
-addition so code making outbound calls gets the same batteries the server side
-already has, instead of hand-rolling `net/http` each time.
+Pronounced "client". Apparently that one needed saying too. Handles outbound
+HTTP without making every service rebuild the same wrapper: JSON, raw, text,
+and form bodies, bounded responses, per-request headers and query values,
+request ID propagation, same-origin redirects, and a real cookie jar. Non-2xx
+responses use the same `ErrorResponse` envelope as the server packages. [Full
+docs](docs/client.md).
 
 ## Logging
 
@@ -120,12 +120,18 @@ No explicit logger passing. Every log line from every middleware and handler aut
 
 ## Development
 
+Every target runs inside a pinned dev image (Go 1.26.6 + the linter and
+scanners), so a local run and CI use the exact same toolchain.
+
 ```bash
+make dev-image      # build the sandboxed dev image
 make dep            # go mod tidy + vendor
+make format         # format Go and shell source
 make lint           # golangci-lint (strict)
 make lint-fix       # lint + auto-fix
 make test           # go test -race ./...
-make test-coverage  # coverage with minimum threshold
+make test-coverage  # coverage with 90% minimum
+make sec            # gitleaks + govulncheck + semgrep; gates on findings
 ```
 
 ## License
