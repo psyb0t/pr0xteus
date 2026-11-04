@@ -10,7 +10,7 @@
 # serves per-cell traffic metrics + health on a control HTTP port.
 
 # ─── builder: the cellproxy binary (metrics-emitting SOCKS5 proxy) ──
-FROM golang:1.26.6-alpine@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
+FROM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS builder
 
 WORKDIR /build
 COPY . .
@@ -29,7 +29,7 @@ FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6ee
 #   resolver supplies DNS; once WG is up resolv.conf is switched)
 RUN apk add --no-cache \
 	bash=5.3.9-r1 \
-	bind-tools=9.20.29-r0 \
+	bind-tools=9.20.30-r0 \
 	iproute2=7.0.0-r0 \
 	iptables=1.8.13-r0 \
 	su-exec=0.3-r0 \

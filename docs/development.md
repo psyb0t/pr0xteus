@@ -151,3 +151,13 @@ those checks during the project's normal commit flow.
 
 Read [getting started](getting-started.md) for ownership boundaries and
 [architecture](architecture.md) for where a change should live.
+
+## Production-image API tests and real-provider tests
+
+`make test-api` (and the broader `make test-integration`) use Testcontainers to build and start the production controller image, a self-contained WireGuard peer container (built from [`tests/testinfra/wireguard/`](../tests/testinfra/wireguard/)), the cell image, and a sibling proxy client on an isolated Docker network. The API test drives every control-plane route over real HTTP and proves that SOCKS5 and HTTP-proxy traffic traverse the WireGuard tunnel to a private test HTTP server on the peer. It needs no provider account, real WireGuard bundle, host port, or persistent container, and Testcontainers tears down only the exact resources it created.
+
+Coverage runs substitute the instrumented `Dockerfile.integration` for the production controller image and merge its native coverage into the overall 90% gate. Normal `test-api` and `test-integration` runs use the production `Dockerfile`. See [coverage](#tests-integration-tests-and-coverage) for the package selection and exclusions.
+
+`make test-real` is deliberately separate from `make test` and CI. It loads the ignored local provider bundle at `secrets/wg/provider-wireguard/` with the matching `secrets/wg/pools.yaml` and `config/egress-routing.yaml`, starts its own Testcontainers controller and consumer, requests a real egress proxy, then verifies that the consumer's public IPv4 address changes when traffic uses both returned proxy URLs. Set `PR0XTEUS_REAL_TEST_COUNTRY=US` before running `make test-real` to select the routing input. It creates a fresh test token and a unique controller scope; it neither reads the production token nor touches a running stack.
+
+The public Go client surface is under [`pkg/client`](../pkg/client); it is useful when another Go service should request and retry egress proxies without re-implementing the HTTP contract.

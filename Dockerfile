@@ -1,6 +1,6 @@
 # pr0xteus orchestrator — reproducible, vendored multi-stage Go build.
 
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
+FROM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 go build -a \
 # by Compose's healthcheck; it contains no compiler, source, or package cache.
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
-RUN apk --no-cache add ca-certificates=20260909-r0
+RUN apk --no-cache add ca-certificates=20261020-r0
 RUN adduser -D -u 1500 -s /bin/sh pr0xteus && \
     install -d -o pr0xteus -g pr0xteus /app
 

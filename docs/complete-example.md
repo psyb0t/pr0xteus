@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | b
 This walkthrough uses the **per-user** install (no root): the command lands in
 `~/.local/bin` and config in `~/.config/pr0xteus`. For a shared, system-wide
 stack — `sudo bash` → `/usr/local/bin` + `/etc/pr0xteus`, readable by the
-`docker` group — see the [README](../README.md).
+`docker` group — see [installation](deploy.md#install-it).
 
 The installer creates `~/.config/pr0xteus/`, writes its local `docker-compose.yml`,
 and installs the `pr0xteus` command. It only creates these local files when

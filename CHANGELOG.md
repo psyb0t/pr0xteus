@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.6 - 2026-11-04
+
+- Shortened the README for Docker Hub and moved installation, configuration, agent integrations, direct Docker deployment, and security details into focused documentation.
+- Refreshed unavailable Alpine package pins so development, controller, and cell images build again.
+- Updated project image builders to Go 1.26.10 to fix the reachable certificate-validation advisory GO-2026-6809.
+- Spread the issue and pull request maintenance schedule across the day.
+
 ## v0.11.5 - 2026-10-16
 
 - Updated servicepack from v1.9.2 to v1.10.0.
