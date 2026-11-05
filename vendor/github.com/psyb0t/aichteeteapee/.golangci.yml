@@ -116,6 +116,7 @@ linters:
             - github.com/getkin/kin-openapi/
             - github.com/oapi-codegen/
             - github.com/swaggo/
+            - golang.org/x/net/publicsuffix
 
   exclusions:
     generated: lax
