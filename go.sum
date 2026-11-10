@@ -398,8 +398,8 @@ github.com/prometheus/common v0.70.1 h1:1HvjP4D5oL3t8RsPlwxA9onvvStjtIHYE5XuuwOi
 github.com/prometheus/common v0.70.1/go.mod h1:VdFUQDMZK3VLkurFUVhia6uys/0suUp86TJz5qbJRhc=
 github.com/prometheus/procfs v0.21.1 h1:GljZCt+zSTS+NZq88cyQ1LjZ+RCHp3uVuabBWA5+OJI=
 github.com/prometheus/procfs v0.21.1/go.mod h1:aB55Cww9pdSJVHk0hUf0inxWyyjPogFIjmHKYgMKmtY=
-github.com/psyb0t/aichteeteapee v1.11.1 h1:YPRhxN4Ya3LPRPchaXqoWT6wSAfAPuEWFAsAZeTj64o=
-github.com/psyb0t/aichteeteapee v1.11.1/go.mod h1:g98oPYwlZwrUGH2SOGj6GOZby2HfMDqrhpfCuTr6luM=
+github.com/psyb0t/aichteeteapee v1.14.0 h1:ESfcEhHQ/2T7h1j8v8vAFFnlRm/f+onyTBP1Hvhg0iw=
+github.com/psyb0t/aichteeteapee v1.14.0/go.mod h1:qPVpUlHAwaz2v7vrx6I9jPHIleW4U4mX/a01/xIlVic=
 github.com/psyb0t/ctxerrors v0.7.1 h1:x2CM3MggPk/W3IswfLxeDvNuVeOt11rbrYuKc14lEjQ=
 github.com/psyb0t/ctxerrors v0.7.1/go.mod h1:h1V0vJtlXGn4H7RuHBtxdrdevBx3CmBTEyJXtFIIrk4=
 github.com/psyb0t/ctxscope v1.0.3 h1:VwI7JQPpT1ZwnBOMKigFgM5CluQ46zwrRkHfx7p67bY=

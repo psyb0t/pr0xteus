@@ -114,6 +114,10 @@ func BasicAuth(opts ...BasicAuthOption) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip authentication for specified paths
+			// path.Clean normalizes the URL path for the configured skip-list
+			// lookup. This is net/url path.Clean, not filesystem-traversal
+			// sanitizing, so the rule does not apply.
+			// nosemgrep
 			if config.SkipPaths[path.Clean(r.URL.Path)] {
 				next.ServeHTTP(w, r)
 
@@ -194,7 +198,9 @@ func constantTimeAuth(users map[string]string, user, pass string) bool {
 	return exists && passwordMatch
 }
 
-// unauthorized sends an unauthorized response.
+// unauthorized sends a 401 with the standard JSON error envelope. When
+// SendChallenge is set it also emits WWW-Authenticate, so browsers still get
+// their Basic-auth popup (the popup is driven by that header, not the body).
 func unauthorized(w http.ResponseWriter, config *BasicAuthConfig) {
 	if config.SendChallenge {
 		w.Header().Set(
@@ -203,9 +209,12 @@ func unauthorized(w http.ResponseWriter, config *BasicAuthConfig) {
 		)
 	}
 
-	http.Error(
+	aichteeteapee.WriteJSON(
 		w,
-		config.UnauthorizedMsg,
 		http.StatusUnauthorized,
+		aichteeteapee.ErrorResponse{
+			Code:    aichteeteapee.ErrorCodeUnauthorized,
+			Message: config.UnauthorizedMsg,
+		},
 	)
 }
