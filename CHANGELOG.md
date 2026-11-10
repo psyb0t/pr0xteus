@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.8 - 2026-11-10
+
+- The development image pins `docker-cli` 29.9.3, because Alpine dropped 29.9.2 and the image no longer built. v0.11.7 never published for that reason; its changes ship in this release.
+- The project rules in `.agents/rules/` keep only what is specific to pr0xteus.
+
 ## v0.11.7 - 2026-11-10
 
 - Published the documentation at https://psyb0t.github.io/pr0xteus/ and moved the reference material from the README files there.
