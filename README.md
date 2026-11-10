@@ -12,7 +12,7 @@ Private, on-demand WireGuard exits for applications and containers. Give pr0xteu
 
 A controller selects an approved configuration and starts an isolated Docker cell through a restricted socket proxy. The cell waits for a WireGuard handshake, then serves its private proxy. Clients use the controller's lease-authenticated SOCKS5 or HTTP gateway. The controller reports traffic and destinations and removes idle or unhealthy cells.
 
-The supplied stack binds API, metrics and proxy ports to host loopback. An optional Tailscale sidecar provides private remote access without publishing host ports. See [controller internals](https://github.com/psyb0t/pr0xteus/blob/main/internal/pkg/services/pr0xteus/README.md) and [security boundaries](https://github.com/psyb0t/pr0xteus/blob/main/docs/security.md).
+The supplied stack binds API, metrics and proxy ports to host loopback. An optional Tailscale sidecar provides private remote access without publishing host ports. See [controller internals](https://psyb0t.github.io/pr0xteus/controller/) and [security boundaries](https://psyb0t.github.io/pr0xteus/security/).
 
 ## Quick start
 
@@ -59,7 +59,7 @@ pr0xteus start
 pr0xteus status
 ```
 
-The default API is `http://127.0.0.1:8000`. Health and metrics use `http://127.0.0.1:9091`. Edit the generated `.env` for ports and operator settings. See [installation and upgrades](https://github.com/psyb0t/pr0xteus/blob/main/docs/deploy.md#install-it) for system-wide installs, rolling images, permissions and preserved configuration.
+The default API is `http://127.0.0.1:8000`. Health and metrics use `http://127.0.0.1:9091`. Edit the generated `.env` for ports and operator settings. See [installation and upgrades](https://psyb0t.github.io/pr0xteus/deploy/#install-it) for system-wide installs, rolling images, permissions and preserved configuration.
 
 ## Allocate an exit and use it
 
@@ -85,17 +85,17 @@ unset token allocation socks5_proxy http_proxy
 unset -a auth
 ```
 
-Both URLs share the selected cell, lease credentials and expiry. They target the controller, not an unpublished cell address. DNS and outbound traffic happen through the cell's WireGuard tunnel. Returned URLs are credentials too: do not log or share them. The [complete walkthrough](https://github.com/psyb0t/pr0xteus/blob/main/docs/complete-example.md) covers egress proof, bad allocations and readiness checks.
+Both URLs share the selected cell, lease credentials and expiry. They target the controller, not an unpublished cell address. DNS and outbound traffic happen through the cell's WireGuard tunnel. Returned URLs are credentials too: do not log or share them. The [complete walkthrough](https://psyb0t.github.io/pr0xteus/complete-example/) covers egress proof, bad allocations and readiness checks.
 
 ## Private remote access
 
-The optional Tailscale or Headscale sidecar has its own persistent tailnet identity. API bearer authentication and proxy lease credentials still apply. The metrics listener has no application authentication, so restrict its access with tailnet ACLs. See [Tailscale setup](https://github.com/psyb0t/pr0xteus/blob/main/docs/deploy.md#tailscale-sidecar).
+The optional Tailscale or Headscale sidecar has its own persistent tailnet identity. API bearer authentication and proxy lease credentials still apply. The metrics listener has no application authentication, so restrict its access with tailnet ACLs. See [Tailscale setup](https://psyb0t.github.io/pr0xteus/deploy/#tailscale-sidecar).
 
 ## API and agent integrations
 
-The JSON API allocates leases, lists approved pools, inventories live cells and their traffic, and destroys selected cells. Collection endpoints use `limit` and `offset`. Read [the API reference](https://github.com/psyb0t/pr0xteus/blob/main/docs/api.md) for request, response and error contracts.
+The JSON API allocates leases, lists approved pools, inventories live cells and their traffic, and destroys selected cells. Collection endpoints use `limit` and `offset`. Read [the API reference](https://psyb0t.github.io/pr0xteus/api/) for request, response and error contracts.
 
-A public [Go client](https://github.com/psyb0t/pr0xteus/tree/main/pkg/client) handles allocation and retries. Documentation skills are available for Claude Code, Codex and OpenClaw; see [agent integrations](https://github.com/psyb0t/pr0xteus/blob/main/docs/integrations.md). pr0xteus is an HTTP service, not an MCP server.
+A public [Go client](https://psyb0t.github.io/pr0xteus/go-client/) handles allocation and retries. Documentation skills are available for Claude Code, Codex and OpenClaw; see [agent integrations](https://psyb0t.github.io/pr0xteus/integrations/). pr0xteus is an HTTP service, not an MCP server.
 
 ## Development
 
@@ -109,21 +109,32 @@ make sec
 make generate
 ```
 
-Tests use the race detector and self-contained Testcontainers infrastructure. Real-provider tests are opt-in. See [development and testing](https://github.com/psyb0t/pr0xteus/blob/main/docs/development.md) for image builds, coverage, production-image API tests and local stack commands.
+Tests use the race detector and self-contained Testcontainers infrastructure. Real-provider tests are opt-in. See [development and testing](https://psyb0t.github.io/pr0xteus/development/) for image builds, coverage, production-image API tests and local stack commands.
 
 ## Documentation
 
-- [Installation, upgrades and tailnet access](https://github.com/psyb0t/pr0xteus/blob/main/docs/deploy.md)
-- [Configuration and image pairing](https://github.com/psyb0t/pr0xteus/blob/main/docs/configuration.md)
-- [Direct Docker deployment](https://github.com/psyb0t/pr0xteus/blob/main/docs/manual-deployment.md)
-- [Complete setup and egress proof](https://github.com/psyb0t/pr0xteus/blob/main/docs/complete-example.md)
-- [Control API](https://github.com/psyb0t/pr0xteus/blob/main/docs/api.md)
-- [Agent integrations](https://github.com/psyb0t/pr0xteus/blob/main/docs/integrations.md)
-- [Security boundaries](https://github.com/psyb0t/pr0xteus/blob/main/docs/security.md)
-- [Controller internals](https://github.com/psyb0t/pr0xteus/blob/main/internal/pkg/services/pr0xteus/README.md)
-- [Cell boot and firewall](https://github.com/psyb0t/pr0xteus/blob/main/cell/README.md)
-- [Development and testing](https://github.com/psyb0t/pr0xteus/blob/main/docs/development.md)
-- [Changelog](https://github.com/psyb0t/pr0xteus/blob/main/CHANGELOG.md)
+The full documentation is at **[psyb0t.github.io/pr0xteus](https://psyb0t.github.io/pr0xteus/)**.
+
+| Section | What it covers |
+| --- | --- |
+| [Complete setup walkthrough](https://psyb0t.github.io/pr0xteus/complete-example/) | Install, configure, allocate and prove egress |
+| [Installation and upgrades](https://psyb0t.github.io/pr0xteus/deploy/) | Installer modes, the `pr0xteus` command, upgrades, Tailscale |
+| [Configuration](https://psyb0t.github.io/pr0xteus/configuration/) | Pool and routing files, every setting, cell image pairing |
+| [Direct Docker deployment](https://psyb0t.github.io/pr0xteus/manual-deployment/) | Running the stack without the wrapper |
+| [Control API](https://psyb0t.github.io/pr0xteus/api/) | Requests, responses and errors |
+| [Go client](https://psyb0t.github.io/pr0xteus/go-client/) | `pkg/client` retries, modes and preflight |
+| [Agent integrations](https://psyb0t.github.io/pr0xteus/integrations/) | Claude Code, Codex and OpenClaw |
+| [Monitoring](https://psyb0t.github.io/pr0xteus/monitoring/) | Health, metrics and logs |
+| [Troubleshooting](https://psyb0t.github.io/pr0xteus/troubleshooting/) | Startup refusals and failed allocations |
+| [Security boundaries](https://psyb0t.github.io/pr0xteus/security/) | What is isolated and what you protect |
+| [Controller internals](https://psyb0t.github.io/pr0xteus/controller/) | Controller and cell design |
+| [Development](https://psyb0t.github.io/pr0xteus/development/) | Building, testing and CI |
+
+The [changelog](https://github.com/psyb0t/pr0xteus/blob/main/CHANGELOG.md) lists every release.
+
+## Sponsor
+
+<a href="https://www.buymeacoffee.com/psyb0t"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" alt="Buy Me a Coffee" height="60" width="217"></a>
 
 ## License and notices
 

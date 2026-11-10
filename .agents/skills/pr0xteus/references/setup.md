@@ -14,15 +14,15 @@ paths, tokens, or Docker flags.
 
 ## Operator setup
 
-**Download the installer and read it before running it — never pipe `curl`
+**Download the installer and read it before running it. Never pipe `curl`
 straight into a shell.** Confirm it only fetches the pinned image, runs the
-image's `config init`, and installs the `pr0xteus` command — then run it.
+image's `config init`, and installs the `pr0xteus` command, then run it.
 
 ```bash
 # 1. Download (do not pipe curl into a shell).
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh -o pr0xteus-install.sh
 
-# 2. Inspect — read the whole thing.
+# 2. Inspect: read the whole thing.
 less pr0xteus-install.sh
 
 # 3a. Per-user install (no root): command -> ~/.local/bin, config ->
@@ -35,7 +35,7 @@ bash pr0xteus-install.sh
 sudo bash pr0xteus-install.sh --system
 ```
 
-The mode auto-detects from who runs it (root → system-wide, otherwise
+The mode auto-detects from who runs it (root gets system-wide, otherwise
 per-user); force it with `--user` or `--system`. Append `--rolling` to pin the
 moving `:latest` instead of the latest release. A per-user install that finds
 `~/.local/bin` off `PATH` prints the exact bash/zsh one-liner to add it.
@@ -83,8 +83,9 @@ curl --fail --silent http://127.0.0.1:9091/healthz
 ```
 
 `pr0xteus start` checks the local token, WireGuard bundle, pools, and routing
-before it starts containers. `latest` carries `cell-latest`; a versioned controller carries its matching
-versioned cell. The controller pulls that cell on demand; its image is not an
+before it starts containers. Each published controller pulls the cell image
+built from its own commit (`cell-sha-<commit>`; releases up to v0.11.6 pull
+`cell-vX.Y.Z`) when it first needs a cell; its image is not an
 operator setting.
 
 The installer pins to the latest tagged release, not `:latest`. Lifecycle
@@ -105,7 +106,7 @@ host, set `PR0XTEUS_TAILSCALE_ENABLED=true` and
 
 The `pr0xteus` command is only a guardrail around Docker: it pulls the pinned
 image, runs the image's `config init`, and drives `docker compose`. To do it
-yourself against a config directory you own — no installer, no wrapper — pin a
+yourself against a config directory you own (no installer, no wrapper), pin a
 released tag (not `:latest`) and reproduce those steps:
 
 ```bash
@@ -182,7 +183,7 @@ unset -a auth_header
 
 ## Cells
 
-The controller also exposes the live cell state behind the pools above —
+The controller also exposes the live cell state behind the pools above:
 observability plus on-demand teardown, discovered straight from Docker (the
 `pr0xteus.parent.id` label), not from in-memory bookkeeping:
 

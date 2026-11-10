@@ -1,21 +1,21 @@
 name: pipeline
 
-on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+# Every branch push runs lint, the tests with the coverage gate, the security
+# scan and the generated-code check. A push to main then builds the cell and
+# controller images and publishes :latest, :cell-latest, :sha-<commit> and
+# :cell-sha-<commit>. A v* tag waits for that commit's main run to succeed,
+# promotes the same image digests to :vX.Y.Z and :cell-vX.Y.Z without
+# rebuilding, cuts the GitHub release and publishes the skill to ClawHub.
+on: [push]
 
 permissions: {}
 
 jobs:
   code:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: "!startsWith(github.ref, 'refs/tags/')"
     permissions:
       contents: read
-      security-events: write
+      security-events: write # for the sec SARIF upload
     uses: psyb0t/reusable-github-workflows/.github/workflows/code-workflow.yml@master
     with:
       lint_command: "make lint"
@@ -28,18 +28,23 @@ jobs:
       sarif_file: "sec.sarif"
       sarif_category: "go"
 
+  # The controller picks its cell image from its baked BUILD_VERSION
+  # (psyb0t/pr0xteus:cell-<version>). Baking sha-<commit> makes :latest and the
+  # promoted :vX.Y.Z both pull the cell built from the same commit, because a
+  # promoted image is never rebuilt with the release tag.
   docker:
     needs: [code]
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: "!startsWith(github.ref, 'refs/tags/')"
     permissions:
-      contents: write
-      security-events: write
+      contents: write # GitHub Release (the called workflow checks it up front)
+      security-events: write # upload the Grype SARIF to the Security tab
     uses: psyb0t/reusable-github-workflows/.github/workflows/docker-image-workflow.yml@master
     with:
       repository_name: psyb0t/pr0xteus
       target_platforms: "linux/amd64,linux/arm64"
       build_targets: >-
-        [{"file":"cell/Dockerfile","tag_prefix":"cell-","stage":0},{"file":"Dockerfile","tag_suffix":"","stage":1,"build_args":"APP_NAME=pr0xteus\nBUILD_COMMIT=${{ github.sha }}\nBUILD_VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}"}]
+        [{"file":"cell/Dockerfile","tag_prefix":"cell-","stage":0},{"file":"Dockerfile","tag_suffix":"","stage":1,"build_args":"APP_NAME=pr0xteus\nBUILD_COMMIT=${{ github.sha }}\nBUILD_VERSION=sha-${{ github.sha }}"}]
+      push_sha_tag: true
       scan_severity: "high"
       scan_fail_build: false
       dockerhub_private: false
@@ -48,20 +53,66 @@ jobs:
       dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
       dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
 
-  badges:
-    needs: [code]
-    if: github.ref_name == github.event.repository.default_branch || startsWith(github.ref, 'refs/tags/')
+  wait:
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: read
+    uses: psyb0t/reusable-github-workflows/.github/workflows/wait-for-default-branch.yml@master
+
+  docker-promote:
+    needs: [wait]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      # The called workflow's release job asks for write even when
+      # create_release turns it off, and GitHub checks that up front.
+      contents: write
+      security-events: write
+    uses: psyb0t/reusable-github-workflows/.github/workflows/docker-image-workflow.yml@master
+    with:
+      repository_name: psyb0t/pr0xteus
+      target_platforms: "linux/amd64,linux/arm64"
+      build_targets: >-
+        [{"file":"cell/Dockerfile","tag_prefix":"cell-","stage":0},{"file":"Dockerfile","tag_suffix":"","stage":1,"build_args":"APP_NAME=pr0xteus\nBUILD_COMMIT=${{ github.sha }}\nBUILD_VERSION=sha-${{ github.sha }}"}]
+      promote_on_tag: true
+      # The release job below cuts the release from the tag's own notes.
+      create_release: false
+      scan_severity: "high"
+      scan_fail_build: false
+      dockerhub_private: false
+      sync_description: true
+    secrets:
+      dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  release:
+    needs: [docker-promote]
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
+    uses: psyb0t/reusable-github-workflows/.github/workflows/release-workflow.yml@master
+
+  # Tag runs read the coverage artifact from the main run they promote.
+  badges:
+    needs: [code, wait]
+    if: "always() && ((github.ref_name == github.event.repository.default_branch && needs.code.result == 'success') || (startsWith(github.ref, 'refs/tags/') && needs.wait.result == 'success'))"
+    permissions:
+      contents: write
+      actions: read # cross-run coverage artifact download on tags
     uses: psyb0t/reusable-github-workflows/.github/workflows/create-badges.yml@master
     with:
       coverage: true
+      coverage_run_id: ${{ needs.wait.outputs.run_id }}
 
+  # Publish the documentation skill to ClawHub once the release and the images
+  # it points at exist.
   publish-to-clawhub:
-    needs: [docker]
+    needs: [release]
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: read
     uses: psyb0t/reusable-github-workflows/.github/workflows/clawhub-publish.yml@master
+    with:
+      skill_names: '["pr0xteus"]'
+      plugin_names: "[]"
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}

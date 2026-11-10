@@ -1,12 +1,15 @@
-# Getting started
+---
+title: "Servicepack basics"
+description: "How a Servicepack project like pr0xteus is created and extended: make own, adding a service, typed config, framework variables and where changes go."
+nav_order: 2
+parent: "Development"
+---
 
-Servicepack is the starting point for a Go application with multiple
-long-running things to run: an API, workers, feeds, schedulers, migration
-commands, whatever. Clone it, make the clone yours, and put your services in
-`internal/pkg/services/`.
+# Servicepack basics
 
-It is not intended to be imported wholesale into an existing project with
-`go get`.
+pr0xteus was created from Servicepack, so the `make own` step below already happened here; the rest of the page applies to changes in this repository. Servicepack is the starting point for a Go application with multiple long-running things to run: an API, workers, feeds, schedulers, migration commands, whatever. Clone it, make the clone yours, and put your services in `internal/pkg/services/`.
+
+It is not intended to be imported wholesale into an existing project with `go get`.
 
 ## 1. Make a fresh clone yours
 
@@ -20,21 +23,16 @@ Run that once, only in a disposable fresh clone. `make own`:
 
 1. removes shipped `example-*` services but leaves `hello-world`;
 2. removes the clone's `.git`, module manifests, and `vendor/` directory;
-3. recreates the module using the supplied `MODNAME` while retaining the
-   framework's pinned dependency and tool declarations;
+3. recreates the module using the supplied `MODNAME` while retaining the framework's pinned dependency and tool declarations;
 4. rewrites framework imports to your module path;
 5. replaces this README with a project stub;
-6. records the framework revision in `servicepack.version` if it does not
-   already exist;
+6. records the framework revision in `servicepack.version` if it does not already exist;
 7. runs dependency and service-registration targets; and
 8. initializes a new Git repository on `main` and creates an initial commit.
 
-It needs Git identity configured well enough for that initial commit. Its
-normal dependency and generation targets run in the Docker development image;
-it does not reject an older host Go toolchain.
+It needs Git identity configured well enough for that initial commit. Its normal dependency and generation targets run in the Docker development image; it does not reject an older host Go toolchain.
 
-Your binary name is the final segment of `MODNAME`: for
-`github.com/yourname/my-service`, it is `my-service`.
+Your binary name is the final segment of `MODNAME`: for `github.com/yourname/my-service`, it is `my-service`.
 
 ## 2. Add a service
 
@@ -42,9 +40,7 @@ Your binary name is the final segment of `MODNAME`: for
 make service NAME=price-worker
 ```
 
-That creates `internal/pkg/services/price-worker/priceworker.go` and then
-regenerates `internal/pkg/services/services.gen.go`. The generated file finds
-the service factories at runtime; do not hand-edit it.
+That creates `internal/pkg/services/price-worker/priceworker.go` and then regenerates `internal/pkg/services/services.gen.go`. The generated file finds the service factories at runtime; do not hand-edit it.
 
 The scaffold is intentionally boring:
 
@@ -61,13 +57,9 @@ func (s *PriceWorker) Run(ctx context.Context) error {
 }
 ```
 
-Replace the wait with the real work, but keep cancellation part of the
-contract. `Run` returning a non-nil error normally starts application
-shutdown; see [services and lifecycle](services-and-lifecycle.md) for the
-exceptions and retry rules.
+Replace the wait with the real work, but keep cancellation part of the contract. `Run` returning a non-nil error normally starts application shutdown; see [services and lifecycle](services-and-lifecycle.md) for the exceptions and retry rules.
 
-When you add, remove, rename, or materially change a service implementation,
-regenerate registration:
+When you add, remove, rename, or materially change a service implementation, regenerate registration:
 
 ```bash
 make service-registration
@@ -84,8 +76,7 @@ type Config struct {
 }
 ```
 
-Parse configuration in `New`, fail with context, and do not reach straight for
-`os.Getenv`:
+Parse configuration in `New`, fail with context, and do not reach straight for `os.Getenv`:
 
 ```go
 func New() (*PriceWorker, error) {
@@ -106,14 +97,11 @@ make build
 ./build/my-service run
 ```
 
-For the everyday development loop, `make run-dev` builds the development image
-and runs the application with the race detector. It is useful for the shipped
-examples; a made-own project usually needs its own config and services first.
+For the everyday development loop, `make run-dev` builds the development image and runs the application with the race detector. It is useful for the shipped examples; a made-own project usually needs its own config and services first.
 
 ## Framework configuration
 
-These names belong to the framework itself. Your services own their own
-configuration names.
+These names belong to the framework itself. Your services own their own configuration names.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
@@ -141,11 +129,6 @@ SERVICES_ENABLED=price-worker,api LOG_LEVEL=debug ./build/my-service run
 | Project build behavior | `Makefile` or `scripts/make/` overrides |
 | Project Docker behavior | `Dockerfile`, `Dockerfile.dev` |
 
-The framework-owned directories are deliberately replaceable by
-`make servicepack-update`: `internal/app/`,
-`internal/pkg/service-manager/`, `pkg/runner/`, `cmd/main.go`,
-`Makefile.servicepack`, `scripts/make/servicepack/`, and
-`Dockerfile.servicepack*`. Do not put application-specific changes there.
+The framework-owned directories are deliberately replaceable by `make servicepack-update`: `internal/app/`, `internal/pkg/service-manager/`, `pkg/runner/`, `cmd/main.go`, `Makefile.servicepack`, `scripts/make/servicepack/`, and `Dockerfile.servicepack*`. Do not put application-specific changes there.
 
-Next: learn the [service lifecycle](services-and-lifecycle.md), then the
-[Docker-first development workflow](development.md).
+Next: learn the [service lifecycle](services-and-lifecycle.md), then the [Docker-first development workflow](development.md).

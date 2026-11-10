@@ -1,14 +1,21 @@
-# Deployment guide
+---
+title: "Installation and upgrades"
+description: "Install pr0xteus per-user or system-wide, add a WireGuard exit, run the pr0xteus command, upgrade or pin releases, and reach it through a Tailscale sidecar."
+nav_order: 3
+has_children: true
+---
 
-Pr0xteus runs from `psyb0t/pr0xteus`, not from a source checkout. You need Linux, Docker, and WireGuard material you are allowed to use. The standard stack keeps API and metrics loopback-only by default, confines raw Docker access to the socket proxy, and keeps WireGuard material plus the bearer token outside Git and image layers.
+# Installation and upgrades
 
-For the exact working configuration, use [complete-example.md](complete-example.md). For controller/cell internals, see [internal/README.md](../internal/pkg/services/pr0xteus/README.md) and [cell/README.md](../cell/README.md).
+pr0xteus runs from `psyb0t/pr0xteus`, not from a source checkout. You need Linux, Docker, and WireGuard material you are allowed to use. The standard stack keeps API and metrics loopback-only by default, confines raw Docker access to the socket proxy, and keeps WireGuard material plus the bearer token outside Git and image layers.
+
+For the exact working configuration, use the [complete setup walkthrough](complete-example.md). Every setting is on the [configuration](configuration.md) page. For controller and cell internals, see [controller internals](controller.md) and [cell image](cell.md).
 
 Install Docker with the Compose plugin before running the installer.
 
 ## Install it
 
-The installer supports per-user and system-wide installation. For a per-user installation without root:
+The installer is [`install.sh`](https://github.com/psyb0t/pr0xteus/blob/main/install.sh); read it before you pipe it into a shell. It supports per-user and system-wide installation. For a per-user installation without root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | bash
@@ -24,13 +31,13 @@ curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh | s
 
 That puts the command in `/usr/local/bin/` and the config in `/etc/pr0xteus/` (root-owned, readable by the `docker` group). Root gets a system-wide installation; other users get a per-user installation. Use `--system` or `--user` to select the mode explicitly.
 
-Either way it drops managed local Compose templates and starter config, generates a bearer token in an owner-only `.env`, refreshes a readable `.env.example`, and installs the `pr0xteus` command. Later `setup` refreshes only those managed Compose templates. `upgrade` refreshes them and the command, then starts the stack through the refreshed command. `.env`, pools, routing, WireGuard files, and Tailscale state are never replaced. No source checkout required. It pins to the **latest tagged release**, and the controller derives its matching cell image from that tag, so both move together only when you upgrade.
+Either way it drops managed local Compose templates and starter config, generates a bearer token in an owner-only `.env`, refreshes a readable `.env.example`, and installs the `pr0xteus` command. Later `setup` refreshes only those managed Compose templates. `upgrade` refreshes them and the command, then starts the stack through the refreshed command. `.env`, pools, routing, WireGuard files, and Tailscale state are never replaced. No source checkout required. It pins to the **latest tagged release**, and that controller pulls the cell image built from the same commit, so both move together only when you upgrade.
 
 The generated stack runs the controller as the installing operator's UID/GID, not as root. That lets it read the owner-only config mount without weakening your WireGuard-file permissions. `setup` and `upgrade` keep that generated `PR0XTEUS_RUNTIME_USER` value current; do not change it unless the config files are deliberately owned by another local account.
 
 After installing, edit the `.env` in your config directory to change the loopback ports, tune logging, or enable the optional tailnet API.
 
-Want to track `main` instead of a release? Add `--rolling` to force the moving `:latest` image for a single run, on the installer (`… | bash -s -- --rolling`) or on any `pr0xteus start` / `pr0xteus upgrade`.
+Want to track `main` instead of a release? Add `--rolling` to force the moving `:latest` image for a single run, on the installer (`curl ... | bash -s -- --rolling`) or on any `pr0xteus start` / `pr0xteus upgrade`.
 
 ## Add a WireGuard exit
 
@@ -79,7 +86,7 @@ pr0xteus uninstall   # stop the stack, remove the command, ask before deleting d
 
 `setup` and `upgrade` refresh `.env.example` and the managed Compose templates while preserving operator config. `upgrade` also refreshes the command, then starts the stack through that new command so current Tailscale routes and public proxy addresses take effect. It re-pins `~/.config/pr0xteus/.env` to the selected image and removes the previous image so dangling layers do not pile up; `uninstall` only deletes your `~/.config/pr0xteus` data and volumes if you say yes at the prompt.
 
-The [complete example](complete-example.md) shows an allocation and an actual host-side egress proof.
+The [complete setup walkthrough](complete-example.md) shows an allocation and an actual host-side egress proof.
 
 ## Pull and start a release
 
@@ -87,7 +94,7 @@ The [complete example](complete-example.md) shows an allocation and an actual ho
 pr0xteus start
 ```
 
-`pr0xteus start` validates local config before it pulls or starts containers. `latest` uses its baked-in `cell-latest` image. A versioned controller uses its matching versioned cell. To pin a controller release, set `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.config/pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. The controller pulls that exact matching cell image when it allocates a tunnel; the cell image is not an operator setting.
+`pr0xteus start` validates local config before it pulls or starts containers. Each controller pulls the cell image built from its own commit ([cell image pairing](configuration.md#cell-image-pairing)). To pin a controller release, set `PR0XTEUS_CONTROLLER_IMAGE=psyb0t/pr0xteus:vX.Y.Z` in `~/.config/pr0xteus/.env`, then run `pr0xteus setup` and `pr0xteus start`. The controller pulls that exact matching cell image when it allocates a tunnel; the cell image is not an operator setting.
 
 `pr0xteus upgrade` refreshes the managed base and port-overlay Compose files, refreshes its command, then starts through that refreshed command. No separate `setup` or `start` is needed after an upgrade, including when current Tailscale Serve routes or proxy public addresses changed.
 
@@ -146,7 +153,7 @@ docker compose --profile tailscale \
 
 For direct Compose, set `PR0XTEUS_SOCKS_PUBLIC_ADDRESS` and `PR0XTEUS_HTTP_PROXY_PUBLIC_ADDRESS` to the sidecar's MagicDNS host with ports `1080` and `8080`, then recreate `pr0xteus` so future leases use reachable addresses. The `pr0xteus` wrapper performs those steps itself.
 
-The sidecar never publishes a host port and does not reuse a Tailscale client running on the host. Its persistent state is `~/.config/pr0xteus/tailscale/state`, so restarts retain the sidecar identity and do not consume the auth key again. For Headscale, set `TS_EXTRA_ARGS=--accept-dns=false --login-server=https://headscale.example`. The sidecar needs `/dev/net/tun`, `NET_ADMIN`, and `NET_RAW` to create its own kernel-mode tunnel. WireGuard cells separately need `/dev/net/tun` and `NET_ADMIN` for their exit tunnels. Append Tailscale options such as `--advertise-tags=tag:your-tag` to `TS_EXTRA_ARGS` when your tailnet policy requires them. An ephemeral auth key can create a node that disappears after going offline; use a persistent identity for a stable gateway hostname. Keep tailnet access to port 9091 restricted because its health and Prometheus endpoints are deliberately unauthenticated.
+The sidecar never publishes a host port and does not reuse a Tailscale client running on the host. Its persistent state is `~/.config/pr0xteus/tailscale/state`, so restarts retain the sidecar identity and do not consume the auth key again. For Headscale, set `TS_EXTRA_ARGS=--accept-dns=false --login-server=https://headscale.example`. The sidecar needs `/dev/net/tun`, `NET_ADMIN`, and `NET_RAW` to create its own kernel-mode tunnel. WireGuard cells separately need `/dev/net/tun` and `NET_ADMIN` for their exit tunnels ([cell image](cell.md#privilege-model)). Append Tailscale options such as `--advertise-tags=tag:your-tag` to `TS_EXTRA_ARGS` when your tailnet policy requires them. An ephemeral auth key can create a node that disappears after going offline; use a persistent identity for a stable gateway hostname. Keep tailnet access to port 9091 restricted because its health and Prometheus endpoints are deliberately unauthenticated.
 
 Leave `PR0XTEUS_DISABLE_HOST_PORTS=false` for the default loopback deployment. While it is false, the `PR0XTEUS_*_HOST_PORT` values are complete `HOST:PORT` mappings that default to `127.0.0.1`. Set one to `0.0.0.0:PORT` only when an authenticated private network boundary protects it. Keep both `*_PUBLIC_ADDRESS` values set to real reachable addresses for allocated proxy URLs; never use `0.0.0.0` for either value.
 
@@ -176,4 +183,4 @@ pr0xteus start
 
 The controller and socket proxy use capped JSON logs. Use `pr0xteus restart` to restart the stack. For configuration or provider changes, use either command.
 
-Source checkout is development-only. Its Makefile runs format, lint, and all tests in the development container; it is not required to operate the image.
+Source checkout is development-only. Its Makefile runs format, lint, and all tests in the development container; it is not required to operate the image. See [development](development.md).

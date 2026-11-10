@@ -1,5 +1,4 @@
 # Codex / agent scratch: never commit
-AGENTS.md
 CODEX.local.md
 .research_files/
 .agent_notes/
@@ -20,9 +19,14 @@ implplan.md
 NOTES.md
 TODO.md
 WIP.md
-CLAUDE.md
 git-update.sh
 git-update.sh.debot
+
+# Local config overrides at any depth
+*.local.json
+
+# Agent notes shipped inside vendored modules
+vendor/**/CLAUDE.md
 
 # Secrets and real WireGuard material
 .env

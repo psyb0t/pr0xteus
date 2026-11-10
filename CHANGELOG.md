@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.7 - 2026-11-10
+
+- Published the documentation at https://psyb0t.github.io/pr0xteus/ and moved the reference material from the README files there.
+- The pipeline now runs lint, the tests with the coverage gate and the security scan on every branch push, and a release tag promotes the images already built on main instead of rebuilding them.
+- The controller's baked-in build version and the cell image it pulls are now `sha-<commit>` and `cell-sha-<commit>` instead of `latest`, so `:latest` and a promoted release both pull the cell built from the same commit.
+- Added Buy Me a Coffee to the funding links, and committed AGENTS.md plus project rules in .agents/rules/ for coding agents.
+
 ## v0.11.6 - 2026-11-04
 
 - Shortened the README for Docker Hub and moved installation, configuration, agent integrations, direct Docker deployment, and security details into focused documentation.

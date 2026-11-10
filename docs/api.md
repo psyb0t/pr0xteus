@@ -1,41 +1,41 @@
+---
+title: "Control API"
+description: "The pr0xteus /v1 control API: allocate SOCKS5 and HTTP proxy leases, list proxies, pools and live cells, destroy a cell, and the JSON error envelope."
+nav_order: 4
+---
+
 # Control API
 
-The control API is a small private HTTP API. It is versioned under `/v1`,
-requires `Authorization: Bearer <token>` on every route, and is loopback-bound
-by default in the supplied Compose stack. `PR0XTEUS_DISABLE_HOST_PORTS=true`
-removes every host binding for a private Docker-network gateway such as the
-Tailscale sidecar. `POST /v1/proxies` allocates one proxy lease; `GET
-/v1/proxies` lists active exits. The shared path is intentional: POST is the
-state-changing collection action and GET is the read-only collection view.
+The control API is a small private HTTP API. It is versioned under `/v1`, requires `Authorization: Bearer <token>` on every route, and is loopback-bound by default in the supplied Compose stack. `PR0XTEUS_DISABLE_HOST_PORTS=true` removes every host binding for a private Docker-network gateway such as the Tailscale sidecar. `POST /v1/proxies` allocates one proxy lease; `GET /v1/proxies` lists active exits. The shared path is intentional: POST is the state-changing collection action and GET is the read-only collection view.
 
-For a safe manual request and real SOCKS5 and HTTP egress proofs, follow
-[complete-example.md](complete-example.md). The handler and pool state behind
-these routes are documented in [internal/README.md](../internal/pkg/services/pr0xteus/README.md).
+For a safe manual request and real SOCKS5 and HTTP egress proofs, follow the [complete setup walkthrough](complete-example.md). The handler and pool state behind these routes are described in [controller internals](controller.md). The handlers live in [`api.go`](https://github.com/psyb0t/pr0xteus/blob/main/internal/pkg/services/pr0xteus/api.go) and [`cells.go`](https://github.com/psyb0t/pr0xteus/blob/main/internal/pkg/services/pr0xteus/cells.go).
 
 ## `POST /v1/proxies`
 
 Request exactly one selection method:
 
 ```json
-{"country":"US","fallbackOk":true}
+{
+  "country": "US",
+  "fallbackOk": true
+}
 ```
 
 ```json
-{"pool":"primary","excludeProxy":"socks5://lease-id:lease-secret@127.0.0.1:1080"}
+{
+  "pool": "primary",
+  "excludeProxy": "socks5://lease-id:lease-secret@127.0.0.1:1080"
+}
 ```
 
 Fields:
 
-- `country` — ISO 3166-1 alpha-2 code resolved by local routing policy.
-- `pool` — exact local logical pool name. It bypasses country routing.
-- `excludeProxy` — optional previous SOCKS5 URL. The matching configuration is
-  excluded while finding a replacement.
-- `fallbackOk` — permits a configured fallback pool when the selected pool is
-  exhausted or unavailable.
+- `country`: ISO 3166-1 alpha-2 code resolved by local routing policy.
+- `pool`: exact local logical pool name. It bypasses country routing.
+- `excludeProxy`: optional previous SOCKS5 URL. The matching configuration is excluded while finding a replacement. A controller lease URL must still be valid; an expired or unknown lease, or a URL that is not `socks5://host:port`, gets a `400`.
+- `fallbackOk`: permits a configured fallback pool when the selected pool is exhausted or unavailable.
 
-Requests must use `Content-Type: application/json`. Bodies are capped at 16 KiB,
-unknown fields are rejected, and a request with both—or neither—`country` and
-`pool` gets a validation error.
+Requests must use `Content-Type: application/json`. Bodies are capped at 16 KiB, unknown fields are rejected, and a request with both or neither of `country` and `pool` gets a validation error. `country` must be two ASCII letters.
 
 Successful response (`200 OK`):
 
@@ -51,19 +51,11 @@ Successful response (`200 OK`):
 }
 ```
 
-`proxies.socks5` points at the controller's SOCKS5 gateway and `proxies.http`
-points at its standard HTTP proxy. They carry one random short-lived
-username/password lease and route only to the exact cell selected for this
-allocation. Keep both URLs out of logs. A lease never silently switches to a
-replacement cell. `exitIP` is reserved optional metadata and is normally
-omitted; the controller does not make an external exit-IP lookup. Do not make
-correctness depend on it.
+`proxies.socks5` points at the controller's SOCKS5 gateway and `proxies.http` points at its standard HTTP proxy. They carry one random short-lived username/password lease and route only to the exact cell selected for this allocation. Keep both URLs out of logs. A lease never silently switches to a replacement cell. `exitIP` is reserved optional metadata and is normally omitted; the controller does not make an external exit-IP lookup. Do not make correctness depend on it.
 
 ## `GET /v1/proxies`
 
-Returns the flattened inventory of currently active tunnels. It is paginated
-with `limit` (default `100`, maximum `1000`) and `offset` (default `0`). It is
-read-only: it never starts a cell and never issues a new lease.
+Returns the flattened inventory of currently active tunnels. `state` is one of `spawning`, `hot`, `unhealthy` or `reaping`. It is paginated with `limit` (default `100`, maximum `1000`) and `offset` (default `0`). It is read-only: it never starts a cell and never issues a new lease.
 
 ```json
 {
@@ -87,15 +79,11 @@ read-only: it never starts a cell and never issues a new lease.
 }
 ```
 
-`lastURL` is omitted until an allocation has been made. It is a live
-credential, so this endpoint has the same bearer-token protection as allocation.
+`lastURL` is omitted until an allocation has been made. It is a live credential, so this endpoint has the same bearer-token protection as allocation.
 
 ## `GET /v1/pools`
 
-Returns the authenticated operator view of configured pools and their current
-tunnel projections. It is paginated with `limit` (default `100`, maximum
-`1000`) and `offset` (default `0`). Docker IDs and in-flight request
-bookkeeping deliberately do not cross this API boundary.
+Returns the authenticated operator view of configured pools and their current tunnel projections. It is paginated with `limit` (default `100`, maximum `1000`) and `offset` (default `0`). Docker IDs and in-flight request bookkeeping deliberately do not cross this API boundary.
 
 Typical response:
 
@@ -121,21 +109,11 @@ Typical response:
 }
 ```
 
-This is an operator view, not the client-facing proxy inventory. `proxyUrl` is
-the cell's internal SOCKS endpoint; use `POST /v1/proxies` for a client URL and
-`GET /v1/proxies` for allocation history.
+This is an operator view, not the client-facing proxy inventory. `proxyUrl` is the cell's internal SOCKS endpoint; use `POST /v1/proxies` for a client URL and `GET /v1/proxies` for allocation history.
 
 ## `GET /v1/cells`
 
-Lists a page of running cells with live traffic snapshots. It is paginated with
-`limit` (default `100`, maximum `1000`) and `offset` (default `0`). Cells are
-discovered straight from Docker — the controller queries for containers carrying
-its own `pr0xteus.parent.id` label, so the source of truth for which cells exist
-and where they are is Docker, not in-memory state. Each cell's traffic is then
-scraped on demand from its cellproxy `/status` control endpoint at the cell's
-current IP on the private cell network. The view is keyed by the cell's own
-Docker container ID so a specific cell can be inspected or destroyed. `state`
-is Docker's own container state (e.g. `running`).
+Lists a page of running cells with live traffic snapshots. It is paginated with `limit` (default `100`, maximum `1000`) and `offset` (default `0`). Cells are discovered straight from Docker: the controller queries for containers carrying its own `pr0xteus.parent.id` label, so the source of truth for which cells exist and where they are is Docker, not in-memory state. Each cell's traffic is then scraped on demand from its cellproxy `/status` control endpoint at the cell's current IP on the private cell network. The view is keyed by the cell's own Docker container ID so a specific cell can be inspected or destroyed. `state` is Docker's own container state, such as `running`.
 
 ```json
 {
@@ -156,7 +134,13 @@ is Docker's own container state (e.g. `running`).
         "active": 3,
         "dialFailures": 0,
         "destinations": [
-          {"destination": "example.com:443", "requests": 40, "bytesUp": 18000, "bytesDown": 900000, "active": 3}
+          {
+            "destination": "example.com:443",
+            "requests": 40,
+            "bytesUp": 18000,
+            "bytesDown": 900000,
+            "active": 3
+          }
         ]
       }
     }
@@ -167,38 +151,36 @@ is Docker's own container state (e.g. `running`).
 }
 ```
 
-`traffic` is omitted and a `statusError` string is set when the controller could
-not reach a cell's control server — for example in the host-loopback smoke mode,
-where cells expose no control address. The destination breakdown is bounded and
-byte-ranked (`PR0XTEUS_CELL_TOP_DESTINATIONS`, default 50) so the response stays
-small under heavy fan-out.
+`traffic` is omitted and a `statusError` string is set when the controller could not reach a cell's control server, for example in the host-loopback smoke mode, where cells expose no control address. The destination breakdown is bounded and byte-ranked: each cell reports its top 50 destinations, so the response stays small under heavy fan-out.
 
 ## `GET /v1/cells/{containerID}`
 
-Returns the single cell with the given container ID, in the same shape as one
-entry of `GET /v1/cells`. Responds `404` when no tracked cell matches.
+Returns the single cell with the given container ID, in the same shape as one entry of `GET /v1/cells`. Responds `404` when no tracked cell matches.
 
 ## `DELETE /v1/cells/{containerID}`
 
-Destroys a cell on demand: stops its container and clears its pool slot so the
-next request re-spawns. Responds `204` on success and `404` when no tracked cell
-matches. Only destroy a cell your own task allocated.
+Destroys a cell on demand: stops its container and clears its pool slot so the next request re-spawns. Responds `204` on success and `404` when no tracked cell matches. Only destroy a cell your own task allocated.
 
-## Error behaviour
+## Errors
 
-The service uses the project-standard JSON error envelope. Expect:
+Errors use one JSON envelope with a fixed `code` and `message`. The body never carries Docker or WireGuard error text:
 
-- `401` — missing or incorrect bearer token.
-- `400` — invalid request shape, unknown pool, or unmapped country with no
-  configured default.
-- `404` — no cell matches the requested container ID on a `/v1/cells/{id}` route.
-- `415` — missing or non-JSON content type.
-- `503` — no usable tunnel could be selected or started.
-- `500` — unexpected controller failure, including an unavailable Docker
-  discovery call; inspect controller logs without printing credentials or
-  WireGuard configuration.
+```json
+{
+  "code": "VALIDATION_FAILED",
+  "message": "Validation failed"
+}
+```
 
-`GET /healthz` and `GET /metrics` live on the separate metrics listener
-(default `:9091`), not under `/v1`, and are intentionally not authenticated.
-Keep that listener private. With the optional Tailscale profile, the wrapper
-routes tailnet TCP port 9091 to this listener without publishing a host port.
+| Status | `code` | When |
+| --- | --- | --- |
+| `400` | `VALIDATION_FAILED` | Invalid body or query, unknown pool, unmapped country with no default pool, bad `excludeProxy`. |
+| `401` | `UNAUTHORIZED` | Missing or incorrect bearer token. |
+| `404` | `NOT_FOUND` | No cell matches the container ID on a `/v1/cells/{containerID}` route. |
+| `415` | `UNSUPPORTED_CONTENT_TYPE` | Missing or non-JSON `Content-Type` on `POST /v1/proxies`. |
+| `503` | `SERVICE_UNAVAILABLE` | No usable tunnel could be selected or started. |
+| `500` | `INTERNAL_SERVER_ERROR` | Unexpected controller failure, including an unavailable Docker discovery call. |
+
+For a `500`, inspect the controller logs without printing credentials or WireGuard configuration. See [troubleshooting](troubleshooting.md) for common causes.
+
+`GET /healthz` and `GET /metrics` live on the separate metrics listener (default `:9091`), not under `/v1`, and are intentionally not authenticated. Keep that listener private. [Monitoring](monitoring.md) lists the metrics. With the optional Tailscale profile, the wrapper routes tailnet TCP port 9091 to this listener without publishing a host port.

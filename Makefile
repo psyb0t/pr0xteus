@@ -73,3 +73,22 @@ status: ## Show the ignored local development stack state through the generated 
 
 audit-compose: dev-image ## Reject unsafe Compose settings in the development container
 	@$(DEV_RUN) bash scripts/audit-compose.sh docker-compose.yml
+
+DOCS_SITE ?= .testing/docs-site
+
+.PHONY: docs
+
+# Builds docs/ with the image GitHub Pages uses, so the local result matches
+# the published site. The output directory is gitignored.
+docs: ## Build the documentation site into .testing/docs-site
+	@mkdir -p "$(DOCS_SITE)"
+	@docker run --rm \
+		--user "$$(id -u):$$(id -g)" \
+		-e HOME=/tmp \
+		-e GITHUB_WORKSPACE=/work \
+		-e GITHUB_REPOSITORY=psyb0t/pr0xteus \
+		-e INPUT_SOURCE=docs \
+		-e INPUT_DESTINATION="$(DOCS_SITE)" \
+		-e INPUT_VERBOSE=false \
+		-v "$(CURDIR):/work" \
+		ghcr.io/actions/jekyll-build-pages:v1.0.13@sha256:6791ebfd912185ed59bfb5fb102664fa872496b79f87ff8b9cfba292a7345041

@@ -36,3 +36,4 @@ git-update.sh
 Dockerfile.dev
 docker-compose*.yml
 .telemetry/
+docs/
