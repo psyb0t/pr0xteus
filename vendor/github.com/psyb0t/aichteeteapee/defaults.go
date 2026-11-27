@@ -55,7 +55,8 @@ const (
 	DefaultUnauthorizedMessage = "Unauthorized"
 
 	// File upload defaults.
-	DefaultFileUploadMaxMemory = int64(32 << 20) // 32MB
+	DefaultFileUploadMaxMemory = int64(32 << 20)  // 32MB
+	DefaultFileUploadMaxSize   = int64(100 << 20) // 100MB
 
 	// WebSocket Client Configuration Defaults.
 	DefaultWebSocketClientSendBufferSize  = 256

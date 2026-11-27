@@ -1,6 +1,7 @@
 package serbewr
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/psyb0t/aichteeteapee"
+	"github.com/psyb0t/ctxerrors"
+	"github.com/psyb0t/ctxscope"
 )
 
 // HealthHandler provides a basic health check endpoint.
@@ -37,7 +40,6 @@ func (s *Server) EchoHandler(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	// Check if request has a body and if so, ensure it's JSON
 	if r.Body != nil && r.ContentLength > 0 {
 		if !aichteeteapee.IsRequestContentTypeJSON(r) {
 			aichteeteapee.WriteJSON(
@@ -55,9 +57,10 @@ func (s *Server) EchoHandler(
 	if r.Body != nil {
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&body); err != nil {
-			s.logger.Error(
-				"Failed to decode request body in echo handler",
-				"error", err,
+			ctxscope.GetLogger(r.Context()).Warn(
+				"failed to decode request body in echo handler",
+				"reason", "invalid_json_body",
+				"err", err,
 			)
 		}
 	}
@@ -90,7 +93,6 @@ func (s *Server) EchoHandler(
 		"body":    body,
 	}
 
-	// Add user if available (from auth middleware)
 	if user, ok := r.Context().Value(
 		aichteeteapee.ContextKeyUser,
 	).(string); ok {
@@ -130,6 +132,7 @@ type FileUploadHandlerOption func(*FileUploadHandlerConfig)
 type FileUploadHandlerConfig struct {
 	postprocessor   FileUploadPostprocessor
 	filenamePrepend FilenamePrependType
+	maxSize         int64
 }
 
 // WithFileUploadHandlerPostprocessor sets a postprocessor that modifies
@@ -151,26 +154,35 @@ func WithFilenamePrependType(
 	}
 }
 
+// WithFileUploadMaxSize sets the total multipart request limit in bytes.
+// Non-positive values retain DefaultFileUploadMaxSize.
+func WithFileUploadMaxSize(maxSize int64) FileUploadHandlerOption {
+	return func(config *FileUploadHandlerConfig) {
+		if maxSize > 0 {
+			config.maxSize = maxSize
+		}
+	}
+}
+
 // FileUploadHandler returns a handler for file uploads to the specified
 // directory.
 func (s *Server) FileUploadHandler(
 	uploadsDir string,
 	opts ...FileUploadHandlerOption,
 ) http.HandlerFunc {
-	// Apply options
 	config := &FileUploadHandlerConfig{
-		filenamePrepend: FilenamePrependTypeUUID, // default to UUID
+		filenamePrepend: FilenamePrependTypeUUID,
+		maxSize:         aichteeteapee.DefaultFileUploadMaxSize,
 	}
 	for _, opt := range opts {
 		opt(config)
 	}
 
-	// Ensure the uploads directory exists
 	const dirPermissions = 0o750
 	if err := os.MkdirAll(uploadsDir, dirPermissions); err != nil {
-		s.logger.Error("Failed to create uploads directory",
-			"error", err,
-			"dir", uploadsDir,
+		s.logger.Error(
+			"failed to create uploads directory",
+			"err", err,
 		)
 	}
 
@@ -186,7 +198,6 @@ func (s *Server) FileUploadHandler(
 		}
 
 		if err := s.handleFileUpload(w, r, uploadsDir, config); err != nil {
-			// Error already handled in handleFileUpload
 			return
 		}
 	}
@@ -201,49 +212,70 @@ func (s *Server) handleFileUpload(
 	uploadsDir string,
 	config *FileUploadHandlerConfig,
 ) error {
+	r.Body = http.MaxBytesReader(w, r.Body, fileUploadMaxSize(config))
+
 	if err := r.ParseMultipartForm(s.config.FileUploadMaxMemory); err != nil {
-		s.logger.Error("Failed to parse multipart form", "error", err)
+		ctxscope.GetLogger(r.Context()).Warn(
+			"failed to parse multipart form",
+			"reason", "invalid_multipart_form",
+			"err", err,
+		)
 		aichteeteapee.WriteJSON(
 			w,
 			http.StatusBadRequest,
 			aichteeteapee.ErrorResponseInvalidMultipartForm,
 		)
 
-		return fmt.Errorf("parse multipart form: %w", err)
+		return ctxerrors.Wrap(err, "parse multipart form")
 	}
+
+	defer func(ctx context.Context) {
+		if removeErr := r.MultipartForm.RemoveAll(); removeErr != nil {
+			ctxscope.GetLogger(ctx).Warn(
+				"failed to remove multipart temporary files",
+				"err", removeErr,
+			)
+		}
+	}(r.Context())
 
 	file, handler, err := r.FormFile("file")
 	if err != nil {
-		s.logger.Error("Failed to get file from form", "error", err)
+		ctxscope.GetLogger(r.Context()).Warn(
+			"failed to get file from form",
+			"reason", "missing_upload_file",
+			"err", err,
+		)
 		aichteeteapee.WriteJSON(
 			w,
 			http.StatusBadRequest,
 			aichteeteapee.ErrorResponseNoFileProvided,
 		)
 
-		return fmt.Errorf("get form file: %w", err)
+		return ctxerrors.Wrap(err, "get form file")
 	}
 
-	defer func() {
+	defer func(ctx context.Context) {
 		if closeErr := file.Close(); closeErr != nil {
-			s.logger.Error("Failed to close uploaded file", "error", closeErr)
+			ctxscope.GetLogger(ctx).Warn(
+				"failed to close uploaded file",
+				"err", closeErr,
+			)
 		}
-	}()
+	}(r.Context())
 
-	// Generate filename with configured prepend type
 	uniqueFilename := s.generateUniqueFilename(
 		handler.Filename, config.filenamePrepend,
 	)
 	filePath := filepath.Join(uploadsDir, uniqueFilename)
 
-	if err := s.saveUploadedFile(file, filePath); err != nil {
+	if err := s.saveUploadedFile(r.Context(), file, filePath); err != nil {
 		aichteeteapee.WriteJSON(
 			w,
 			http.StatusInternalServerError,
 			aichteeteapee.ErrorResponseFileSaveFailed,
 		)
 
-		return err
+		return ctxerrors.Wrap(err, "save uploaded file")
 	}
 
 	response := map[string]any{
@@ -254,18 +286,20 @@ func (s *Server) handleFileUpload(
 		"path":              uniqueFilename,
 	}
 
-	// Apply postprocessor if configured
 	if config.postprocessor != nil {
 		processedResponse, err := config.postprocessor(response, r)
 		if err != nil {
-			s.logger.Error("Failed to postprocess response", "error", err)
+			ctxscope.GetLogger(r.Context()).Error(
+				"failed to postprocess upload response",
+				"err", err,
+			)
 			aichteeteapee.WriteJSON(
 				w,
 				http.StatusInternalServerError,
 				aichteeteapee.ErrorResponseInternalServerError,
 			)
 
-			return fmt.Errorf("postprocess response: %w", err)
+			return ctxerrors.Wrap(err, "postprocess upload response")
 		}
 
 		response = processedResponse
@@ -280,8 +314,17 @@ func (s *Server) handleFileUpload(
 	return nil
 }
 
+func fileUploadMaxSize(config *FileUploadHandlerConfig) int64 {
+	if config != nil && config.maxSize > 0 {
+		return config.maxSize
+	}
+
+	return aichteeteapee.DefaultFileUploadMaxSize
+}
+
 // saveUploadedFile saves the uploaded file to the specified path.
 func (s *Server) saveUploadedFile(
+	ctx context.Context,
 	src io.Reader,
 	filePath string,
 ) error {
@@ -291,26 +334,30 @@ func (s *Server) saveUploadedFile(
 		uploadFilePermissions,
 	)
 	if err != nil {
-		s.logger.Error("Failed to create destination file",
-			"error", err,
-			"path", filePath,
+		ctxscope.GetLogger(ctx).Error(
+			"failed to create destination file",
+			"err", err,
 		)
 
-		return fmt.Errorf("create file %s: %w", filePath, err)
+		return ctxerrors.Wrap(err, "create file")
 	}
 
 	defer func() {
 		if closeErr := dst.Close(); closeErr != nil {
-			s.logger.Error(
-				"Failed to close destination file", "error", closeErr,
+			ctxscope.GetLogger(ctx).Warn(
+				"failed to close destination file",
+				"err", closeErr,
 			)
 		}
 	}()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		s.logger.Error("Failed to copy file content", "error", err)
+		ctxscope.GetLogger(ctx).Error(
+			"failed to copy uploaded file content",
+			"err", err,
+		)
 
-		return fmt.Errorf("copy file content: %w", err)
+		return ctxerrors.Wrap(err, "copy uploaded file content")
 	}
 
 	return nil
