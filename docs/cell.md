@@ -1,8 +1,6 @@
 ---
-title: "Cell image"
+title: Cell image
 description: "The pr0xteus cell: one WireGuard configuration in, one private SOCKS5 listener out. Boot sequence, kill switch, privilege model and image build."
-nav_order: 1
-parent: "Controller internals"
 ---
 
 # Cell image

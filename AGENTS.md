@@ -28,7 +28,7 @@ Data flow: client -> controller SOCKS5 or HTTP gateway (lease check) -> cell SOC
 
 ## Stack
 
-- Go 1.26.10 in `Dockerfile`, `Dockerfile.dev` and `cell/Dockerfile` (`go 1.26.6` minimum in `go.mod`), `CGO_ENABLED=0`, vendored modules.
+- Go 1.26.11 in `Dockerfile`, `Dockerfile.dev` and `cell/Dockerfile` (`go 1.26.6` minimum in `go.mod`), `CGO_ENABLED=0`, vendored modules.
 - servicepack with `ctxerrors`, `ctxscope`, `gonfiguration`, `slogging`, aichteeteapee for HTTP, `github.com/moby/moby` for the Docker API, `things-go/go-socks5`, Prometheus `client_golang`, Cobra.
 - Tests: testify and Testcontainers, with a WireGuard peer image in `tests/testinfra/wireguard/`.
 - Images: digest-pinned Alpine runtimes. The controller runs as UID 1500. The cell starts as root and drops to UID 1500.
@@ -70,7 +70,7 @@ make generate        # go generate; CI fails on drift
 make build           # static binary in build/
 make build-cell      # psyb0t/pr0xteus:cell-dev
 make audit-compose   # checks docker-compose.yml against the hardened floor
-make docs            # builds the documentation site into .testing/docs-site
+make docs            # builds the documentation site into website/build and checks its links
 make run             # local images through the real installer and wrapper
 ```
 

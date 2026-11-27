@@ -74,21 +74,26 @@ status: ## Show the ignored local development stack state through the generated 
 audit-compose: dev-image ## Reject unsafe Compose settings in the development container
 	@$(DEV_RUN) bash scripts/audit-compose.sh docker-compose.yml
 
-DOCS_SITE ?= .testing/docs-site
+# The documentation site in website/ builds the pages in docs/ with Docusaurus
+# inside a pinned Node image. The install step downloads the locked packages
+# through pnpm's age gate; the build itself runs with no network.
+DOCS_NODE_IMAGE := node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+DOCS_CACHE := .testing/docs-cache
+DOCS_RUN := docker run --rm --init --cap-drop ALL --security-opt no-new-privileges:true \
+	--user $(UID):$(GID) -e HOME=/tmp -e COREPACK_HOME=/cache/corepack \
+	-v "$(CURDIR)/$(DOCS_CACHE):/cache" \
+	-v "$(CURDIR)/docs:/work/docs:ro" -v "$(CURDIR)/website:/work/website" -w /work/website
 
-.PHONY: docs
+.PHONY: docs docs-build docs-lock
 
-# Builds docs/ with the image GitHub Pages uses, so the local result matches
-# the published site. The output directory is gitignored.
-docs: ## Build the documentation site into .testing/docs-site
-	@mkdir -p "$(DOCS_SITE)"
-	@docker run --rm \
-		--user "$$(id -u):$$(id -g)" \
-		-e HOME=/tmp \
-		-e GITHUB_WORKSPACE=/work \
-		-e GITHUB_REPOSITORY=psyb0t/pr0xteus \
-		-e INPUT_SOURCE=docs \
-		-e INPUT_DESTINATION="$(DOCS_SITE)" \
-		-e INPUT_VERBOSE=false \
-		-v "$(CURDIR):/work" \
-		ghcr.io/actions/jekyll-build-pages:v1.0.13@sha256:6791ebfd912185ed59bfb5fb102664fa872496b79f87ff8b9cfba292a7345041
+docs: docs-build ## Build the documentation site and check its links
+
+docs-build: | $(DOCS_CACHE) ## Build the documentation site into website/build
+	@$(DOCS_RUN) $(DOCS_NODE_IMAGE) corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /cache/pnpm
+	@$(DOCS_RUN) --network none $(DOCS_NODE_IMAGE) corepack pnpm run build
+
+docs-lock: | $(DOCS_CACHE) ## Refresh the documentation lockfile under the dependency age gate
+	@$(DOCS_RUN) $(DOCS_NODE_IMAGE) corepack pnpm install --lockfile-only --ignore-scripts --store-dir /cache/pnpm
+
+$(DOCS_CACHE):
+	@mkdir -p "$@"

@@ -8,7 +8,7 @@ deliberately configure another protected bind address. Use WireGuard material
 you are allowed to use.
 
 For the full operator walkthrough, see
-[docs/complete-example.md](../../../../docs/complete-example.md). This page is
+[the complete example](https://github.com/psyb0t/pr0xteus/blob/main/docs/complete-example.md). This page is
 the agent fast path: use the published image and its installer; do not invent
 paths, tokens, or Docker flags.
 
@@ -18,12 +18,14 @@ paths, tokens, or Docker flags.
 straight into a shell.** Confirm it only fetches the pinned image, runs the
 image's `config init`, and installs the `pr0xteus` command, then run it.
 
+Run setup only when the user asked for it. The per-user install needs no root. The system-wide install uses `sudo` to write `/usr/local/bin` and `/etc/pr0xteus`, so offer it only when the user wants one shared stack.
+
 ```bash
 # 1. Download (do not pipe curl into a shell).
 curl -fsSL https://raw.githubusercontent.com/psyb0t/pr0xteus/main/install.sh -o pr0xteus-install.sh
 
 # 2. Inspect: read the whole thing.
-less pr0xteus-install.sh
+cat pr0xteus-install.sh
 
 # 3a. Per-user install (no root): command -> ~/.local/bin, config ->
 #     ~/.config/pr0xteus, just for the current user.
@@ -47,12 +49,11 @@ shown; a system-wide install uses `/etc/pr0xteus` instead of `~/.config/pr0xteus
 ~/.config/pr0xteus/secrets/wireguard/*.conf      real provider or private-network files
 ~/.config/pr0xteus/secrets/pools.yaml            approved logical pools
 ~/.config/pr0xteus/config/egress-routing.yaml    country -> pool policy
-~/.config/pr0xteus/.env                           bearer token, host path, image and ports
+~/.config/pr0xteus/.env                           settings: bearer token, host path, image and ports
 ~/.config/pr0xteus/.env.example                   refreshed reference; safe to inspect
 ```
 
-The bearer token is `PR0XTEUS_API_TOKEN` in owner-only `.env`, not a separate
-secret file. The installer owns the absolute host path the controller needs
+The bearer token is `PR0XTEUS_API_TOKEN` in that owner-only settings file, not a separate secret file. The operator moves it into a secret store for you. The installer owns the absolute host path the controller needs
 when it asks Docker to bind one chosen file into a cell.
 
 Put an authorized `*.conf` file in `~/.config/pr0xteus/secrets/wireguard/`, then make
@@ -82,8 +83,7 @@ pr0xteus start
 curl --fail --silent http://127.0.0.1:9091/healthz
 ```
 
-`pr0xteus start` checks the local token, WireGuard bundle, pools, and routing
-before it starts containers. Each published controller pulls the cell image
+`pr0xteus start` checks the local token, WireGuard bundle, pools, and routing before it pulls images and starts containers. The stack mounts the host Docker socket into a socket-proxy container, and the controller reaches Docker only through that proxy. Each published controller pulls the cell image
 built from its own commit (`cell-sha-<commit>`; releases up to v0.11.6 pull
 `cell-vX.Y.Z`) when it first needs a cell; its image is not an
 operator setting.
@@ -100,38 +100,37 @@ image), and `pr0xteus uninstall` (prompts before deleting
 To reach the controller from a tailnet without binding controller ports on the
 host, set `PR0XTEUS_TAILSCALE_ENABLED=true` and
 `PR0XTEUS_DISABLE_HOST_PORTS=true`; see the sidecar option in
-[docs/deploy.md](../../../../docs/deploy.md#tailscale-sidecar).
+[the deploy guide](https://github.com/psyb0t/pr0xteus/blob/main/docs/deploy.md#tailscale-sidecar).
 
 ## Run it with Docker directly
 
 The `pr0xteus` command is only a guardrail around Docker: it pulls the pinned
 image, runs the image's `config init`, and drives `docker compose`. To do it
-yourself against a config directory you own (no installer, no wrapper), pin a
-released tag (not `:latest`) and reproduce those steps:
+yourself against a config directory you own (no installer, no wrapper), reproduce those steps. Run a released tag, not `:latest`: add `:vX.Y.Z` to `psyb0t/pr0xteus` in the three places below. The copy of this skill published to ClawHub already carries the release tag and digest.
 
 ```bash
 config_dir=~/.config/pr0xteus            # any directory you own
-image=psyb0t/pr0xteus:vX.Y.Z             # pin a released tag
 mkdir -p "$config_dir"
-docker pull "$image"
+docker pull psyb0t/pr0xteus
 
-# Scaffold compose + .env + config skeleton and refresh .env.example (.env stays untouched).
+# Scaffold compose, settings and the config skeleton, and refresh the example
+# settings file (an existing settings file stays untouched).
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$config_dir:/config" \
-  "$image" config init \
+  psyb0t/pr0xteus config init \
   --config-dir /config \
   --host-config-dir "$config_dir" \
-  --controller-image "$image"
+  --controller-image psyb0t/pr0xteus
 
 # Fill secrets/wireguard/*.conf, secrets/pools.yaml, config/egress-routing.yaml,
-# and PR0XTEUS_API_TOKEN in .env (see above), then bring the stack up:
+# and PR0XTEUS_API_TOKEN in the settings file (see above), then bring the stack up:
 docker compose --project-directory "$config_dir" \
   --env-file "$config_dir/.env" \
   -f "$config_dir/docker-compose.yml" \
   -f "$config_dir/docker-compose.host-ports.yml" up -d
 ```
 
-If `.env` sets `PR0XTEUS_DISABLE_HOST_PORTS=true`, add
+If the settings file sets `PR0XTEUS_DISABLE_HOST_PORTS=true`, add
 `-f "$config_dir/docker-compose.no-host-ports.yml"` after the base Compose
 file *instead of* `docker-compose.host-ports.yml`. The wrapper does this
 automatically.
@@ -142,16 +141,19 @@ chosen WireGuard file into a cell. This is exactly what `pr0xteus setup` +
 
 ## Allocate and prove a proxy
 
+Take the token from the environment or your secret store, as the agent API section below does. Do not read it out of the operator's configuration directory.
+
 ```bash
-token="$(sed -n 's/^PR0XTEUS_API_TOKEN=//p' ~/.config/pr0xteus/.env)"
-auth_header=(--header @<(printf 'Authorization: Bearer %s' "$token"))
+export PR0XTEUS_URL=http://127.0.0.1:8000
+export PR0XTEUS_API_TOKEN=read-it-from-your-secret-store
+auth_header=(--header @<(printf 'Authorization: Bearer %s' "$PR0XTEUS_API_TOKEN"))
 
 allocation="$(
   curl --fail-with-body --request POST \
     "${auth_header[@]}" \
     --header 'Content-Type: application/json' \
     --data '{"country":"US"}' \
-    http://127.0.0.1:8000/v1/proxies
+    "$PR0XTEUS_URL/v1/proxies"
 )"
 socks5_proxy="$(jq -er '.proxies.socks5' <<<"$allocation")"
 http_proxy="$(jq -er '.proxies.http' <<<"$allocation")"
@@ -165,10 +167,10 @@ exits without making another allocation:
 
 ```bash
 curl --fail-with-body "${auth_header[@]}" \
-  'http://127.0.0.1:8000/v1/proxies?limit=100' | jq .
+  "$PR0XTEUS_URL/v1/proxies?limit=100" | jq .
 ```
 
-Use the allocated URL for real traffic:
+Use the allocated URL for real traffic. This proof asks `api.ipify.org`, a public service, for the exit IP, so run it only when the user wants that check:
 
 ```bash
 curl --fail --silent --show-error \
@@ -177,7 +179,7 @@ curl --fail --silent --show-error \
 curl --fail --silent --show-error \
   --proxy "$http_proxy" https://api.ipify.org
 
-unset token socks5_proxy http_proxy allocation
+unset PR0XTEUS_API_TOKEN socks5_proxy http_proxy allocation
 unset -a auth_header
 ```
 
@@ -215,8 +217,8 @@ curl --fail-with-body --request DELETE \
 ## Agent API use
 
 Use the private controller URL and bearer token supplied through the plugin's
-sensitive configuration. Do not read the operator's `.env`, WireGuard files,
-or Docker socket.
+sensitive configuration. Do not read the operator's settings file, WireGuard
+files, or Docker socket.
 
 ```bash
 export PR0XTEUS_URL=http://127.0.0.1:8000

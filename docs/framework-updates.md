@@ -1,8 +1,6 @@
 ---
-title: "Framework updates"
+title: Framework updates
 description: "Update the Servicepack framework inside pr0xteus with make servicepack-update: what it replaces, what it preserves, backups and the checks to run after."
-nav_order: 4
-parent: "Development"
 ---
 
 # Framework updates

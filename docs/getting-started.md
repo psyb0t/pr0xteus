@@ -1,8 +1,6 @@
 ---
-title: "Servicepack basics"
+title: Servicepack basics
 description: "How a Servicepack project like pr0xteus is created and extended: make own, adding a service, typed config, framework variables and where changes go."
-nav_order: 2
-parent: "Development"
 ---
 
 # Servicepack basics

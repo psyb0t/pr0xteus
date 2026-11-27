@@ -27,6 +27,7 @@ jobs:
       coverage_file: "coverage-percent.txt"
       sarif_file: "sec.sarif"
       sarif_category: "go"
+      sarif_required: true
 
   # The controller picks its cell image from its baked BUILD_VERSION
   # (psyb0t/pr0xteus:cell-<version>). Baking sha-<commit> makes :latest and the
@@ -114,5 +115,7 @@ jobs:
     with:
       skill_names: '["pr0xteus"]'
       plugin_names: "[]"
+      pin_images: '["psyb0t/pr0xteus"]'
+      pin_source_urls: true
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}

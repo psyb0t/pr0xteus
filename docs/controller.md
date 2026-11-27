@@ -1,8 +1,6 @@
 ---
-title: "Controller internals"
+title: Controller internals
 description: "How the pr0xteus controller is split: API server, pool manager, lease registry, proxy gateways, Docker cell spawner and reaper, with their invariants."
-nav_order: 10
-has_children: true
 ---
 
 # Controller internals

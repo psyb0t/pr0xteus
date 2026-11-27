@@ -1,7 +1,6 @@
 ---
-title: "Troubleshooting"
-description: "Fix pr0xteus startup refusals, config check errors, 401 and 503 responses, cells that never become healthy, and unreachable proxy URLs, with the exact messages."
-nav_order: 8
+title: Troubleshooting
+description: Fix pr0xteus startup refusals, config check errors, 401 and 503 responses, cells that never become healthy, and unreachable proxy URLs, with the exact messages.
 ---
 
 # Troubleshooting

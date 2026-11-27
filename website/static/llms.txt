@@ -1,0 +1,22 @@
+# pr0xteus
+
+> Private, on-demand WireGuard exits that hand trusted clients short-lived SOCKS5 and HTTP proxy URLs, with each exit running in its own Docker cell.
+
+- [Home](https://psyb0t.github.io/pr0xteus/): pr0xteus gives trusted apps and containers private WireGuard exits as short-lived SOCKS5 and HTTP proxy URLs, with cells started on demand in Docker.
+- [Complete setup walkthrough](https://psyb0t.github.io/pr0xteus/complete-example/): Install pr0xteus from the published image, add an authorized WireGuard file, start the stack, allocate a lease and prove SOCKS5 and HTTP egress.
+- [Installation and upgrades](https://psyb0t.github.io/pr0xteus/deploy/): Install pr0xteus per-user or system-wide, add a WireGuard exit, run the pr0xteus command, upgrade or pin releases, and reach it through a Tailscale sidecar.
+- [Configuration](https://psyb0t.github.io/pr0xteus/configuration/): pr0xteus operator files, pools.yaml and egress-routing.yaml fields, every .env and controller environment variable with defaults, and cell image pairing.
+- [Direct Docker deployment](https://psyb0t.github.io/pr0xteus/manual-deployment/): Run pr0xteus without the wrapper: initialize the config with the image's config init, validate it with config check, and start it with docker compose.
+- [Control API](https://psyb0t.github.io/pr0xteus/api/): The pr0xteus /v1 control API: allocate SOCKS5 and HTTP proxy leases, list proxies, pools and live cells, destroy a cell, and the JSON error envelope.
+- [Go client](https://psyb0t.github.io/pr0xteus/go-client/): Use the pr0xteus pkg/client Go package: request proxy leases, send HTTP through them with retries, pick VPN-only or public-first mode, and run the preflight IP check.
+- [Agent integrations](https://psyb0t.github.io/pr0xteus/integrations/): Install the pr0xteus documentation skill for Claude Code, Codex and OpenClaw, and give it a trusted controller URL and API token.
+- [Monitoring](https://psyb0t.github.io/pr0xteus/monitoring/): pr0xteus health and Prometheus metrics on port 9091, the per-cell traffic view, log fields and where to read the logs of the controller and wrapper.
+- [Troubleshooting](https://psyb0t.github.io/pr0xteus/troubleshooting/): Fix pr0xteus startup refusals, config check errors, 401 and 503 responses, cells that never become healthy, and unreachable proxy URLs, with the exact messages.
+- [Security boundaries](https://psyb0t.github.io/pr0xteus/security/): What pr0xteus isolates: the Docker socket proxy, controller and cell privileges, token and lease handling, Tailscale exposure and the operator trust boundary.
+- [Controller internals](https://psyb0t.github.io/pr0xteus/controller/): How the pr0xteus controller is split: API server, pool manager, lease registry, proxy gateways, Docker cell spawner and reaper, with their invariants.
+- [Cell image](https://psyb0t.github.io/pr0xteus/cell/): The pr0xteus cell: one WireGuard configuration in, one private SOCKS5 listener out. Boot sequence, kill switch, privilege model and image build.
+- [Development](https://psyb0t.github.io/pr0xteus/development/): Build, lint and test pr0xteus from source with Docker-backed Make targets, the Testcontainers suites, the coverage gate, the docs build and the CI pipeline.
+- [Servicepack architecture](https://psyb0t.github.io/pr0xteus/architecture/): How the servicepack framework under pr0xteus runs: entry point, runner, app hooks, service manager, source ownership and lazy service registration.
+- [Servicepack basics](https://psyb0t.github.io/pr0xteus/getting-started/): How a Servicepack project like pr0xteus is created and extended: make own, adding a service, typed config, framework variables and where changes go.
+- [Services and lifecycle](https://psyb0t.github.io/pr0xteus/services-and-lifecycle/): The Servicepack service contract pr0xteus implements: Run and Stop, retry, allowed failure, dependencies, readiness, commands, hooks and shutdown deadlines.
+- [Framework updates](https://psyb0t.github.io/pr0xteus/framework-updates/): Update the Servicepack framework inside pr0xteus with make servicepack-update: what it replaces, what it preserves, backups and the checks to run after.

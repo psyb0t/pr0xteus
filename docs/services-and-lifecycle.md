@@ -1,8 +1,6 @@
 ---
-title: "Services and lifecycle"
+title: Services and lifecycle
 description: "The Servicepack service contract pr0xteus implements: Run and Stop, retry, allowed failure, dependencies, readiness, commands, hooks and shutdown deadlines."
-nav_order: 3
-parent: "Development"
 ---
 
 # Services and lifecycle

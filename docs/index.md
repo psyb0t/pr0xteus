@@ -1,10 +1,7 @@
 ---
-title: "Home"
-description: "pr0xteus gives trusted apps and containers private WireGuard exits as short-lived SOCKS5 and HTTP proxy URLs, with cells started on demand in Docker."
-nav_order: 1
-permalink: /
-seo:
-  type: WebSite
+title: Home
+description: pr0xteus gives trusted apps and containers private WireGuard exits as short-lived SOCKS5 and HTTP proxy URLs, with cells started on demand in Docker.
+slug: /
 ---
 
 # pr0xteus

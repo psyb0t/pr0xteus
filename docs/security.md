@@ -1,7 +1,6 @@
 ---
-title: "Security boundaries"
+title: Security boundaries
 description: "What pr0xteus isolates: the Docker socket proxy, controller and cell privileges, token and lease handling, Tailscale exposure and the operator trust boundary."
-nav_order: 9
 ---
 
 # Security boundaries

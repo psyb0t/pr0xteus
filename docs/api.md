@@ -1,7 +1,6 @@
 ---
-title: "Control API"
+title: Control API
 description: "The pr0xteus /v1 control API: allocate SOCKS5 and HTTP proxy leases, list proxies, pools and live cells, destroy a cell, and the JSON error envelope."
-nav_order: 4
 ---
 
 # Control API

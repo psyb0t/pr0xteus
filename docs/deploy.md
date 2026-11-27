@@ -1,8 +1,6 @@
 ---
-title: "Installation and upgrades"
-description: "Install pr0xteus per-user or system-wide, add a WireGuard exit, run the pr0xteus command, upgrade or pin releases, and reach it through a Tailscale sidecar."
-nav_order: 3
-has_children: true
+title: Installation and upgrades
+description: Install pr0xteus per-user or system-wide, add a WireGuard exit, run the pr0xteus command, upgrade or pin releases, and reach it through a Tailscale sidecar.
 ---
 
 # Installation and upgrades

@@ -1,8 +1,6 @@
 ---
-title: "Direct Docker deployment"
+title: Direct Docker deployment
 description: "Run pr0xteus without the wrapper: initialize the config with the image's config init, validate it with config check, and start it with docker compose."
-nav_order: 2
-parent: "Installation and upgrades"
 ---
 
 # Direct Docker deployment

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.11.9 - 2026-11-27
+
+- Fixes the two reachable vulnerabilities that `make sec` reported. The Go builders move from Go 1.26.10 to 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash caused by a `MaxBytesReader` header race in `net/http`). OpenTelemetry moves from v1.44.0 to v1.47.0, with go-logr/logr following from v1.4.3 to v1.4.4, which fixes GO-2026-6974 (a bypass of the attribute value length limit with U+FFFD characters). The controller, cell, development and integration images all build with Go 1.26.11.
+- The development image pins the Alpine package revisions that Alpine ships now (`docker-cli` 29.9.3-r1, `docker-cli-compose` 5.7.2, `git` 2.54.1, `python3` 3.14.10-r2 and `py3-pip` 26.1.2-r1). Alpine had dropped the old ones, so the image no longer built.
+- The documentation site is now built by Docusaurus, a static site generator, instead of Jekyll, and every page keeps its address. A new `docs.yml` workflow publishes it. `make docs` builds the site in a pinned Node container and fails on a broken link or anchor, and `make docs-lock` refreshes its lockfile.
+- The agent skill says that setup is operator work to run only when the user asks, that it installs a command and starts containers, that the system-wide install uses `sudo`, and that the stack mounts the host Docker socket into a socket-proxy container. Its metadata lists the hosts it contacts and the files it writes. Its proxy example takes the token from the environment instead of reading the operator's settings file.
+- When the skill is published to the ClawHub skill registry, it names the released `psyb0t/pr0xteus` image by tag and digest instead of `latest`, and its links to files in this repository point at the release tag instead of `main`. The files in the repository keep `latest` and `main`.
+- The pipeline's code job now fails when the security scan produces no report or GitHub rejects the upload.
+
 ## v0.11.8 - 2026-11-10
 
 - The development image pins `docker-cli` 29.9.3, because Alpine dropped 29.9.2 and the image no longer built. v0.11.7 never published for that reason; its changes ship in this release.

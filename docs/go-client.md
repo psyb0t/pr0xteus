@@ -1,7 +1,6 @@
 ---
-title: "Go client"
+title: Go client
 description: "Use the pr0xteus pkg/client Go package: request proxy leases, send HTTP through them with retries, pick VPN-only or public-first mode, and run the preflight IP check."
-nav_order: 5
 ---
 
 # Go client

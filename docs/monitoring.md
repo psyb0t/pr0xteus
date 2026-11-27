@@ -1,7 +1,6 @@
 ---
-title: "Monitoring"
-description: "pr0xteus health and Prometheus metrics on port 9091, the per-cell traffic view, log fields and where to read the logs of the controller and wrapper."
-nav_order: 7
+title: Monitoring
+description: pr0xteus health and Prometheus metrics on port 9091, the per-cell traffic view, log fields and where to read the logs of the controller and wrapper.
 ---
 
 # Monitoring

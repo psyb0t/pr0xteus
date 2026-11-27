@@ -1,8 +1,6 @@
 ---
-title: "Configuration"
-description: "pr0xteus operator files, pools.yaml and egress-routing.yaml fields, every .env and controller environment variable with defaults, and cell image pairing."
-nav_order: 1
-parent: "Installation and upgrades"
+title: Configuration
+description: pr0xteus operator files, pools.yaml and egress-routing.yaml fields, every .env and controller environment variable with defaults, and cell image pairing.
 ---
 
 # Configuration

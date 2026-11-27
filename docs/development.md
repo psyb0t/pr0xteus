@@ -1,8 +1,6 @@
 ---
-title: "Development"
-description: "Build, lint and test pr0xteus from source with Docker-backed Make targets, the Testcontainers suites, the coverage gate, the docs build and the CI pipeline."
-nav_order: 11
-has_children: true
+title: Development
+description: Build, lint and test pr0xteus from source with Docker-backed Make targets, the Testcontainers suites, the coverage gate, the docs build and the CI pipeline.
 ---
 
 # Development
@@ -29,7 +27,7 @@ The exact scripts and override lookup live in the [framework Make-script deep di
 | `make sec` | Docker | govulncheck and semgrep, merged into `sec.sarif`. |
 | `make build-cell` | Docker + socket | Build `psyb0t/pr0xteus:cell-dev`. |
 | `make audit-compose` | Docker | Check `docker-compose.yml` against the hardened Compose floor. |
-| `make docs` | Docker | Build the documentation site into `.testing/docs-site`. |
+| `make docs` | Docker | Build the documentation site into `website/build` and check its links. |
 | `make lint` | Docker | `shfmt`, ShellCheck, `go fix` diff check, and golangci-lint. |
 | `make lint-fix` | Docker | Apply supported formatting and lint fixes. Review its diff. |
 | `make format` | Docker | Run gofumpt and shfmt. |
@@ -114,7 +112,7 @@ The public Go client is under [`pkg/client`](https://github.com/psyb0t/pr0xteus/
 
 ## Documentation site
 
-`docs/` is the documentation site. GitHub Pages builds it from `main` with Jekyll and the just-the-docs theme. Every page needs front matter with a unique `title` and a `description` of 50 to 170 characters. Page-to-page links use the relative `.md` path; a link to a file outside `docs/` uses the full GitHub URL. `make docs` builds the site with the same image GitHub uses, `ghcr.io/actions/jekyll-build-pages`, into the ignored `.testing/docs-site`.
+`docs/` is the documentation site. The Docusaurus project in `website/` builds it, and the `docs.yml` workflow publishes it to GitHub Pages from `main`. Every page needs front matter with a unique `title` and a `description` of 50 to 170 characters. Page-to-page links use the relative `.md` path; a link to a file outside `docs/` uses the full GitHub URL. `make docs` builds the site in a pinned Node container into the ignored `website/build`, with no network during the build, and fails on a broken link or anchor. `make docs-lock` refreshes `website/pnpm-lock.yaml` under pnpm's seven-day package age gate.
 
 ## Continuous integration
 
@@ -124,4 +122,4 @@ The public Go client is under [`pkg/client`](https://github.com/psyb0t/pr0xteus/
 - `main`, after the checks pass: builds the cell and controller images for `linux/amd64` and `linux/arm64` and pushes `:latest`, `:cell-latest`, `:sha-<commit>` and `:cell-sha-<commit>` to Docker Hub, then refreshes the version, license and coverage badges.
 - A `v*` tag: waits for that commit's `main` run to succeed, points `:vX.Y.Z` and `:cell-vX.Y.Z` at the same image digests without rebuilding, creates the GitHub release, refreshes the badges and publishes the `pr0xteus` skill to ClawHub.
 
-The mirror, issue relay and collaborator workflows next to it are independent of this pipeline.
+The documentation workflow (`docs.yml`, which builds the site on every push and pull request and publishes it from `main`), the mirror, the issue relay and the collaborator workflows next to it are independent of this pipeline.

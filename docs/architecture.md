@@ -1,8 +1,6 @@
 ---
-title: "Servicepack architecture"
+title: Servicepack architecture
 description: "How the servicepack framework under pr0xteus runs: entry point, runner, app hooks, service manager, source ownership and lazy service registration."
-nav_order: 1
-parent: "Development"
 ---
 
 # Servicepack architecture

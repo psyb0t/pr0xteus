@@ -1,6 +1,6 @@
 ---
 name: pr0xteus
-description: Give a trusted self-hosted workload configured WireGuard-backed SOCKS5 and HTTP exits through pr0xteus's bearer-protected private API. Request an operator-approved ISO country or logical pool, inspect leased-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and controller-fronted proxies. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
+description: Give a trusted self-hosted workload configured WireGuard-backed SOCKS5 and HTTP exits through pr0xteus's bearer-protected private API. Request an operator-approved ISO country or logical pool, inspect leased-cell state, replace a failed assignment with excludeProxy, or integrate the Go client with VPN-only or public-first retry behavior. It uses operator-owned WireGuard bundles, Docker-spawned cells, country routing, fallback pools, and controller-fronted proxies. Operator setup, only on request, downloads an installer from GitHub, installs a pr0xteus command, and starts Docker containers. Use when a service needs controlled country-specific egress without exposing an open proxy or accepting caller-supplied Docker and provider configuration.
 homepage: https://github.com/psyb0t/pr0xteus
 user-invocable: true
 metadata:
@@ -10,9 +10,9 @@ metadata:
     requires:
       bins: [bash, curl, docker, jq]
 permissions:
-  network: "Runtime control-API calls go only to the user-configured PR0XTEUS_URL. Traffic sent through allocated SOCKS5 or HTTP URLs exits through operator-configured WireGuard infrastructure; use only trusted private control endpoints and operator-approved destination URLs. pkg/client's preflight check additionally makes direct, unproxied calls to api.ipify.org and ifconfig.me to confirm the exit IP actually changed. Setup time (references/setup.md) also reaches raw.githubusercontent.com for the installer and Docker Hub for the pinned image."
-  shell: "bash, curl, jq, and explicit Docker commands from references/setup.md for user-requested setup or verification."
-  filesystem: "Normal use reads PR0XTEUS_URL and PR0XTEUS_API_TOKEN from the environment. Operator setup writes only gitignored local WireGuard, pool, routing, token, and .env files."
+  network: "Runtime control-API calls go to the user-configured PR0XTEUS_URL. The health check calls the controller's separate unauthenticated metrics listener on the same host, 127.0.0.1:9091 by default. Traffic sent through allocated SOCKS5 or HTTP URLs exits through operator-configured WireGuard infrastructure, so use only trusted private control endpoints and operator-approved destination URLs. The proxy proof in references/setup.md requests api.ipify.org through the allocated proxy, and pkg/client's preflight check makes direct, unproxied calls to api.ipify.org and ifconfig.me to confirm the exit IP actually changed. Operator setup (references/setup.md) reaches api.github.com for the latest release tag, raw.githubusercontent.com for the installer and the pr0xteus command, and Docker Hub and ghcr.io for images."
+  shell: "bash, curl, jq, and explicit Docker commands from references/setup.md for user-requested setup or verification. The optional system-wide install runs the installer with sudo."
+  filesystem: "Normal use reads PR0XTEUS_URL and PR0XTEUS_API_TOKEN from the environment. Operator setup, only when the user asks, writes pr0xteus-install.sh in the current directory, the pr0xteus command to ~/.local/bin (or /usr/local/bin with sudo), and the configuration directory ~/.config/pr0xteus (or /etc/pr0xteus with sudo) holding the WireGuard configs, pool and routing files, and the controller's settings. The stack also mounts /var/run/docker.sock into a socket-proxy container."
 ---
 
 # pr0xteus
@@ -38,6 +38,11 @@ controller-fronted proxy exit works, read
   for the controller's proxy gateways. Keep them out of logs, issue trackers,
   and public services. Trusted host and container clients can use either; only
   the controller talks to the selected cell's private address.
+- Setup is operator work. Run it only when the user asks. It installs a
+  command, pulls images and starts containers. The stack mounts the host
+  Docker socket into a socket-proxy container, and the controller reaches
+  Docker only through that proxy to start and remove cells. The system-wide
+  install uses `sudo`.
 - pr0xteus has no MCP endpoint. This is a documentation skill, not a fake
   bridge plugin with invented tools.
 
@@ -71,7 +76,7 @@ export PR0XTEUS_API_TOKEN=replace-with-the-token-from-your-secret-store
 auth_header=(--header @<(printf 'Authorization: Bearer %s' "$PR0XTEUS_API_TOKEN"))
 ```
 
-Health lives on the separate metrics listener and deliberately has no token:
+Health lives on the controller's separate metrics listener, bound to `127.0.0.1:9091` on the host by default, and deliberately has no token:
 
 ```bash
 curl --fail --silent http://127.0.0.1:9091/healthz
@@ -126,7 +131,7 @@ curl --fail-with-body --request POST \
 
 ## Go client
 
-The public [`pkg/client`](../../../pkg/client) package requests a proxy,
+The public [`pkg/client`](https://github.com/psyb0t/pr0xteus/tree/main/pkg/client) package requests a proxy,
 builds an HTTP client around it, and can preflight that the exit IP changes.
 Keep the control token in the service's secret store and pass it with
 `client.WithBearerToken`; the package doc comment contains the full shape.

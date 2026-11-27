@@ -1,7 +1,6 @@
 ---
-title: "Agent integrations"
-description: "Install the pr0xteus documentation skill for Claude Code, Codex and OpenClaw, and give it a trusted controller URL and API token."
-nav_order: 6
+title: Agent integrations
+description: Install the pr0xteus documentation skill for Claude Code, Codex and OpenClaw, and give it a trusted controller URL and API token.
 ---
 
 # Agent integrations

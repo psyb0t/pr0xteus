@@ -1,7 +1,6 @@
 ---
-title: "Complete setup walkthrough"
-description: "Install pr0xteus from the published image, add an authorized WireGuard file, start the stack, allocate a lease and prove SOCKS5 and HTTP egress."
-nav_order: 2
+title: Complete setup walkthrough
+description: Install pr0xteus from the published image, add an authorized WireGuard file, start the stack, allocate a lease and prove SOCKS5 and HTTP egress.
 ---
 
 # Complete setup walkthrough
